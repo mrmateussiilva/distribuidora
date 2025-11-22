@@ -4,6 +4,8 @@ use sqlx::{
     SqlitePool,
 };
 
+pub type DbPool = SqlitePool;
+
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
 pub async fn init_db() -> Result<SqlitePool, Box<dyn std::error::Error>> {

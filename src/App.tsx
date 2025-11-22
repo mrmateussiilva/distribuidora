@@ -7,6 +7,8 @@ import POS from "./pages/POS";
 import Stock from "./pages/Stock";
 import Orders from "./pages/Orders";
 import Settings from "./pages/Settings";
+import LoginPage from "./pages/Login";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
   return (
@@ -16,17 +18,20 @@ function App() {
         v7_relativeSplatPath: true,
       }}
     >
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/products" element={<Products />} />
-          <Route path="/customers" element={<Customers />} />
-          <Route path="/pos" element={<POS />} />
-          <Route path="/stock" element={<Stock />} />
-          <Route path="/orders" element={<Orders />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
-      </Layout>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<Layout />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/products" element={<Products />} />
+            <Route path="/customers" element={<Customers />} />
+            <Route path="/pos" element={<POS />} />
+            <Route path="/stock" element={<Stock />} />
+            <Route path="/orders" element={<Orders />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
+        </Route>
+      </Routes>
     </BrowserRouter>
   );
 }

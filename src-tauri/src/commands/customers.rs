@@ -1,76 +1,67 @@
-use crate::db::customers;
-use crate::models::{Customer, CreateCustomerPayload, UpdateCustomerPayload};
-use crate::errors::AppError;
-use sqlx::SqlitePool;
+use crate::auth::AuthState;
+use crate::db::{customers, DbPool};
+use crate::errors::Result;
+use crate::guards;
+use crate::models::{CreateCustomerPayload, Customer, UpdateCustomerPayload};
 use tauri::State;
 
-use super::products::AppState;
-
-fn get_db(state: &State<'_, AppState>) -> Result<SqlitePool, AppError> {
-    state
-        .db
-        .lock()
-        .unwrap()
-        .as_ref()
-        .ok_or_else(|| AppError::Database(sqlx::Error::PoolClosed))
-        .cloned()
+#[tauri::command]
+pub async fn get_customers(
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<Vec<Customer>> {
+    let _user = guards::get_authenticated_user(&auth_state)?;
+    customers::get_all_customers(pool.inner()).await
 }
 
 #[tauri::command]
-pub async fn get_customers(state: State<'_, AppState>) -> Result<Vec<Customer>, String> {
-    let pool = get_db(&state)?;
-    customers::get_all_customers(&pool)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn get_customer(id: i64, state: State<'_, AppState>) -> Result<Customer, String> {
-    let pool = get_db(&state)?;
-    customers::get_customer_by_id(&pool, id)
-        .await
-        .map_err(|e| e.to_string())
+pub async fn get_customer(
+    id: i64,
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<Customer> {
+    let _user = guards::get_authenticated_user(&auth_state)?;
+    customers::get_customer_by_id(pool.inner(), id).await
 }
 
 #[tauri::command]
 pub async fn search_customers_by_phone(
     phone: String,
-    state: State<'_, AppState>,
-) -> Result<Vec<Customer>, String> {
-    let pool = get_db(&state)?;
-    customers::search_customers_by_phone(&pool, &phone)
-        .await
-        .map_err(|e| e.to_string())
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<Vec<Customer>> {
+    let _user = guards::get_authenticated_user(&auth_state)?;
+    customers::search_customers_by_phone(pool.inner(), &phone).await
 }
 
 #[tauri::command]
 pub async fn create_customer(
     payload: CreateCustomerPayload,
-    state: State<'_, AppState>,
-) -> Result<i64, String> {
-    let pool = get_db(&state)?;
-    customers::create_customer(&pool, payload)
-        .await
-        .map_err(|e| e.to_string())
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<i64> {
+    let _user = guards::get_authenticated_user(&auth_state)?;
+    customers::create_customer(pool.inner(), payload).await
 }
 
 #[tauri::command]
 pub async fn update_customer(
     id: i64,
     payload: UpdateCustomerPayload,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let pool = get_db(&state)?;
-    customers::update_customer(&pool, id, payload)
-        .await
-        .map_err(|e| e.to_string())
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<()> {
+    let _user = guards::get_authenticated_user(&auth_state)?;
+    customers::update_customer(pool.inner(), id, payload).await
 }
 
 #[tauri::command]
-pub async fn delete_customer(id: i64, state: State<'_, AppState>) -> Result<(), String> {
-    let pool = get_db(&state)?;
-    customers::delete_customer(&pool, id)
-        .await
-        .map_err(|e| e.to_string())
+pub async fn delete_customer(
+    id: i64,
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<()> {
+    let _user = guards::get_authenticated_user(&auth_state)?;
+    customers::delete_customer(pool.inner(), id).await
 }
 

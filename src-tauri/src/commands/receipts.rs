@@ -1,29 +1,17 @@
-use crate::db::orders;
-use crate::errors::AppError;
-use sqlx::SqlitePool;
+use crate::auth::AuthState;
+use crate::db::{orders, DbPool};
+use crate::errors::Result;
+use crate::guards;
 use tauri::State;
-
-use super::products::AppState;
-
-fn get_db(state: &State<'_, AppState>) -> Result<SqlitePool, AppError> {
-    state
-        .db
-        .lock()
-        .unwrap()
-        .as_ref()
-        .ok_or_else(|| AppError::Database(sqlx::Error::PoolClosed))
-        .cloned()
-}
 
 #[tauri::command]
 pub async fn generate_receipt(
     order_id: i64,
-    state: State<'_, AppState>,
-) -> Result<String, String> {
-    let pool = get_db(&state)?;
-    let order = orders::get_order_by_id(&pool, order_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<String> {
+    let _user = guards::get_authenticated_user(&auth_state)?;
+    let order = orders::get_order_by_id(pool.inner(), order_id).await?;
 
     // Gera HTML do recibo
     let html = format!(
@@ -113,13 +101,13 @@ pub async fn generate_receipt(
         "#,
         order_id,
         order_id,
-        order.order.customer_name.as_ref().unwrap_or(&"Consumidor Final".to_string()),
+        order.order.customer_name.as_deref().unwrap_or("Consumidor Final"),
         order.order.created_at,
         order.items.iter().map(|item| {
             format!(
                 "<tr><td>{} {}</td><td>{}</td><td>R$ {:.2}</td><td>R$ {:.2}</td></tr>",
                 item.product_name,
-                if item.returned_bottle { "(com casco)" } else { "(sem casco)" },
+                if item.returned_bottle { "(com casco)" } else { "" },
                 item.quantity,
                 item.unit_price,
                 item.quantity as f64 * item.unit_price

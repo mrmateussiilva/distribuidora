@@ -5,10 +5,11 @@ mod db;
 mod models;
 mod errors;
 mod commands;
+mod auth;
+mod guards;
 
-use db::init_db;
-use commands::products::AppState;
-use std::sync::Mutex;
+use db::{init_db, DbPool};
+use tauri::Manager;
 
 use commands::{
     // Products
@@ -23,6 +24,8 @@ use commands::{
     get_dashboard_stats,
     // Receipts
     generate_receipt,
+    // Users
+    login, seed_admin_user, logout, get_current_user,
 };
 
 #[tokio::main]
@@ -31,8 +34,16 @@ async fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(AppState {
-            db: Mutex::new(Some(db_pool)),
+        .manage(db_pool)
+        .manage(auth::AuthState::default())
+        .setup(|app| {
+            let pool = app.state::<DbPool>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = commands::users::_internal_seed_admin_user(&pool, "admin").await {
+                    eprintln!("Failed to seed admin user: {}", e);
+                }
+            });
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             // Products
@@ -62,6 +73,11 @@ async fn main() {
             get_dashboard_stats,
             // Receipts
             generate_receipt,
+            // Users
+            login,
+            seed_admin_user,
+            logout,
+            get_current_user,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,56 +1,46 @@
-use crate::db::orders;
+use crate::auth::AuthState;
+use crate::db::{orders, DbPool};
+use crate::errors::Result;
+use crate::guards;
 use crate::models::{CreateOrderPayload, OrderWithCustomer, OrderWithItems};
-use crate::errors::AppError;
-use sqlx::SqlitePool;
 use tauri::State;
-
-use super::products::AppState;
-
-fn get_db(state: &State<'_, AppState>) -> Result<SqlitePool, AppError> {
-    state
-        .db
-        .lock()
-        .unwrap()
-        .as_ref()
-        .ok_or_else(|| AppError::Database(sqlx::Error::PoolClosed))
-        .cloned()
-}
 
 #[tauri::command]
 pub async fn create_order(
     payload: CreateOrderPayload,
-    state: State<'_, AppState>,
-) -> Result<i64, String> {
-    let pool = get_db(&state)?;
-    orders::create_order(&pool, payload)
-        .await
-        .map_err(|e| e.to_string())
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<i64> {
+    let _user = guards::get_authenticated_user(&auth_state)?;
+    orders::create_order(pool.inner(), payload).await
 }
 
 #[tauri::command]
-pub async fn get_orders(state: State<'_, AppState>) -> Result<Vec<OrderWithCustomer>, String> {
-    let pool = get_db(&state)?;
-    orders::get_all_orders(&pool)
-        .await
-        .map_err(|e| e.to_string())
+pub async fn get_orders(
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<Vec<OrderWithCustomer>> {
+    let _user = guards::get_authenticated_user(&auth_state)?;
+    orders::get_all_orders(pool.inner()).await
 }
 
 #[tauri::command]
-pub async fn get_order(id: i64, state: State<'_, AppState>) -> Result<OrderWithItems, String> {
-    let pool = get_db(&state)?;
-    orders::get_order_by_id(&pool, id)
-        .await
-        .map_err(|e| e.to_string())
+pub async fn get_order(
+    id: i64,
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<OrderWithItems> {
+    let _user = guards::get_authenticated_user(&auth_state)?;
+    orders::get_order_by_id(pool.inner(), id).await
 }
 
 #[tauri::command]
 pub async fn get_orders_by_customer(
     customer_id: i64,
-    state: State<'_, AppState>,
-) -> Result<Vec<OrderWithCustomer>, String> {
-    let pool = get_db(&state)?;
-    orders::get_orders_by_customer(&pool, customer_id)
-        .await
-        .map_err(|e| e.to_string())
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<Vec<OrderWithCustomer>> {
+    let _user = guards::get_authenticated_user(&auth_state)?;
+    orders::get_orders_by_customer(pool.inner(), customer_id).await
 }
 

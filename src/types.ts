@@ -146,3 +146,10 @@ export interface CartItem {
   returnedBottle: boolean;
   customPrice?: number; // Preço unitário customizado (opcional)
 }
+
+// ========== USERS ==========
+export interface SafeUser {
+  id: number;
+  username: string;
+  role: 'admin' | 'operator';
+}

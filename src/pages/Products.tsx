@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useProductsStore } from "../state/productsStore";
+import { useAuthStore } from "@/state/authStore";
 import { productsApi } from "../api/products";
 import type { Product, CreateProductPayload } from "../types";
 import { Plus, Edit, Trash2 } from "lucide-react";
@@ -36,6 +37,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export default function Products() {
   const { products, loading, fetchProducts, removeProduct } =
     useProductsStore();
+  const { user } = useAuthStore();
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState<CreateProductPayload>({
@@ -200,13 +202,15 @@ export default function Products() {
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(product.id)}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
+                      {user?.role === 'admin' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(product.id)}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

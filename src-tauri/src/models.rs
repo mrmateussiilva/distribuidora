@@ -157,3 +157,22 @@ pub struct TopProduct {
     pub total_quantity: i64,
     pub total_revenue: f64,
 }
+
+// ========== USERS ==========
+#[derive(Debug, Deserialize, sqlx::FromRow)]
+#[allow(dead_code)]
+pub struct User {
+    pub id: i64,
+    pub username: String,
+    pub password_hash: String,
+    pub role: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SafeUser {
+    pub id: i64,
+    pub username: String,
+    pub role: String,
+}
