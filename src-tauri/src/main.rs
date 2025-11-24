@@ -27,8 +27,9 @@ use commands::{
     get_dashboard_stats,
     // Receipts
     generate_receipt,
-    // Users
-    login, seed_admin_user, logout, get_current_user,
+            // Users
+            login, seed_admin_user, logout, get_current_user,
+            get_users, create_user, update_user, delete_user,
 };
 
 #[tokio::main]
@@ -81,6 +82,10 @@ async fn main() {
             seed_admin_user,
             logout,
             get_current_user,
+            get_users,
+            create_user,
+            update_user,
+            delete_user,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -6,9 +6,10 @@ use tauri::State;
 
 use crate::{
     auth::AuthState,
-    db::{self, DbPool},
+    db::{self, users, DbPool},
     errors::{AppError, Result},
-    models::SafeUser,
+    guards,
+    models::{SafeUser, UserListItem, CreateUserPayload, UpdateUserPayload},
 };
 
 // This is the internal function that can be called from `main.rs`
@@ -85,6 +86,46 @@ pub async fn logout(auth_state: State<'_, AuthState>) -> Result<()> {
 #[tauri::command]
 pub async fn get_current_user(auth_state: State<'_, AuthState>) -> Result<Option<SafeUser>> {
     Ok(auth_state.user.lock().unwrap().clone())
+}
+
+#[tauri::command]
+pub async fn get_users(
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<Vec<UserListItem>> {
+    let _user = guards::require_admin(&auth_state)?;
+    users::get_all_users(pool.inner()).await
+}
+
+#[tauri::command]
+pub async fn create_user(
+    payload: CreateUserPayload,
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<i64> {
+    let _user = guards::require_admin(&auth_state)?;
+    users::create_user(pool.inner(), payload).await
+}
+
+#[tauri::command]
+pub async fn update_user(
+    id: i64,
+    payload: UpdateUserPayload,
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<()> {
+    let _user = guards::require_admin(&auth_state)?;
+    users::update_user(pool.inner(), id, payload).await
+}
+
+#[tauri::command]
+pub async fn delete_user(
+    id: i64,
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<()> {
+    let _user = guards::require_admin(&auth_state)?;
+    users::delete_user(pool.inner(), id).await
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ import {
   Settings,
   ChevronsLeft,
   LogOut,
+  UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
@@ -32,6 +33,7 @@ export default function Layout() {
     { path: "/pos", label: "PDV", icon: ShoppingCart, adminOnly: false },
     { path: "/stock", label: "Estoque", icon: Warehouse, adminOnly: false },
     { path: "/orders", label: "Vendas", icon: History, adminOnly: false },
+    { path: "/users", label: "Usuários", icon: UserCog, adminOnly: true },
     { path: "/settings", label: "Configurações", icon: Settings, adminOnly: true },
   ];
 

@@ -7,6 +7,7 @@ import POS from "./pages/POS";
 import Stock from "./pages/Stock";
 import Orders from "./pages/Orders";
 import Settings from "./pages/Settings";
+import Users from "./pages/Users";
 import LoginPage from "./pages/Login";
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -29,6 +30,7 @@ function App() {
             <Route path="/stock" element={<Stock />} />
             <Route path="/orders" element={<Orders />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/users" element={<Users />} />
           </Route>
         </Route>
       </Routes>

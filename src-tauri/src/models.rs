@@ -176,3 +176,25 @@ pub struct SafeUser {
     pub username: String,
     pub role: String,
 }
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct UserListItem {
+    pub id: i64,
+    pub username: String,
+    pub role: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateUserPayload {
+    pub username: String,
+    pub password: String,
+    pub role: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateUserPayload {
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub role: Option<String>,
+}
