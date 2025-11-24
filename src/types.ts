@@ -90,6 +90,10 @@ export interface CreateOrderPayload {
   items: OrderItemPayload[];
 }
 
+export interface UpdateOrderPayload {
+  created_at?: string;
+}
+
 export interface OrderItemWithProduct {
   id: number;
   order_id: number;

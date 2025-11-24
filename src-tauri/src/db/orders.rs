@@ -1,5 +1,5 @@
 use crate::models::{
-    OrderWithCustomer, CreateOrderPayload,
+    OrderWithCustomer, CreateOrderPayload, UpdateOrderPayload,
     OrderWithItems, OrderItemWithProduct,
 };
 use crate::errors::AppError;
@@ -191,6 +191,26 @@ pub async fn delete_order(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
 
     // Commit transação
     tx.commit().await?;
+
+    Ok(())
+}
+
+pub async fn update_order(
+    pool: &SqlitePool,
+    id: i64,
+    payload: UpdateOrderPayload,
+) -> Result<(), AppError> {
+    // Verifica se o pedido existe
+    get_order_by_id(pool, id).await?;
+
+    // Atualiza apenas a data se fornecida
+    if let Some(created_at) = payload.created_at {
+        sqlx::query("UPDATE orders SET created_at = ? WHERE id = ?")
+            .bind(created_at)
+            .bind(id)
+            .execute(pool)
+            .await?;
+    }
 
     Ok(())
 }

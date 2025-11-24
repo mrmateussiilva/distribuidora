@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useProductsStore } from "../state/productsStore";
 import { useCustomersStore } from "../state/customersStore";
 import { useCartStore } from "../state/cartStore";
+import { useAuthStore } from "@/state/authStore";
 import { ordersApi } from "../api/orders";
 import { receiptsApi } from "../api/receipts";
 import type { Customer, Product, OrderWithCustomer, OrderWithItems } from "../types";
@@ -50,6 +51,7 @@ export default function POS() {
   const { products, fetchProducts } = useProductsStore();
   const { customers, fetchCustomers } = useCustomersStore();
   const { getItemPrice } = useCartStore();
+  const { user } = useAuthStore();
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [orderSuccess, setOrderSuccess] = useState(false);
@@ -65,6 +67,7 @@ export default function POS() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showNewSaleModal, setShowNewSaleModal] = useState(false);
   const [orderSearch, setOrderSearch] = useState("");
+  const [editingOrderDate, setEditingOrderDate] = useState<{ orderId: number; date: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -442,6 +445,40 @@ export default function POS() {
     }
   };
 
+  const handleDeleteOrder = async (orderId: number) => {
+    if (confirm("Tem certeza que deseja excluir esta venda? Esta ação não pode ser desfeita.")) {
+      try {
+        await ordersApi.delete(orderId);
+        await loadRecentOrders();
+        alert("Venda excluída com sucesso!");
+      } catch (error) {
+        alert("Erro ao excluir venda: " + error);
+      }
+    }
+  };
+
+  const handleUpdateOrderDate = async (orderId: number, newDate: string) => {
+    try {
+      // Converte a data para o formato ISO
+      const dateObj = new Date(newDate);
+      const isoDate = dateObj.toISOString();
+      
+      await ordersApi.update(orderId, { created_at: isoDate });
+      await loadRecentOrders();
+      
+      // Atualiza o pedido selecionado se estiver aberto
+      if (selectedOrder && selectedOrder.order.id === orderId) {
+        const updatedOrder = await ordersApi.getById(orderId);
+        setSelectedOrder(updatedOrder);
+      }
+      
+      setEditingOrderDate(null);
+      alert("Data da venda atualizada com sucesso!");
+    } catch (error) {
+      alert("Erro ao atualizar data da venda: " + error);
+    }
+  };
+
   const handleNewSale = () => {
     clearAll();
     setShowNewSaleModal(true);
@@ -541,13 +578,51 @@ export default function POS() {
                         </span>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {new Date(order.created_at).toLocaleDateString("pt-BR", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                        {editingOrderDate?.orderId === order.id && user?.role === 'admin' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="datetime-local"
+                              defaultValue={new Date(order.created_at).toISOString().slice(0, 16)}
+                              onBlur={(e) => {
+                                if (e.target.value) {
+                                  handleUpdateOrderDate(order.id, e.target.value);
+                                } else {
+                                  setEditingOrderDate(null);
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  const target = e.target as HTMLInputElement;
+                                  if (target.value) {
+                                    handleUpdateOrderDate(order.id, target.value);
+                                  }
+                                } else if (e.key === "Escape") {
+                                  setEditingOrderDate(null);
+                                }
+                              }}
+                              className="w-48 h-8"
+                              autoFocus
+                            />
+                          </div>
+                        ) : (
+                          <div
+                            className={user?.role === 'admin' ? "cursor-pointer hover:bg-accent p-1 rounded" : ""}
+                            onClick={() => {
+                              if (user?.role === 'admin') {
+                                setEditingOrderDate({ orderId: order.id, date: order.created_at });
+                              }
+                            }}
+                            title={user?.role === 'admin' ? "Clique para editar a data" : ""}
+                          >
+                            {new Date(order.created_at).toLocaleDateString("pt-BR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-center gap-1">
@@ -569,6 +644,17 @@ export default function POS() {
                           >
                             <FileText className="w-4 h-4" />
                           </Button>
+                          {user?.role === 'admin' && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleDeleteOrder(order.id)}
+                              title="Excluir venda"
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -841,7 +927,12 @@ export default function POS() {
       </Dialog>
 
       {/* Dialog de Detalhes da Venda */}
-      <Dialog open={showOrderModal} onOpenChange={setShowOrderModal}>
+      <Dialog open={showOrderModal} onOpenChange={(open) => {
+        setShowOrderModal(open);
+        if (!open) {
+          setEditingOrderDate(null);
+        }
+      }}>
         <DialogContent className="max-w-2xl max-h-[80vh]">
           <DialogHeader>
             <DialogTitle>
@@ -860,10 +951,55 @@ export default function POS() {
                     <span className="text-muted-foreground">Consumidor Final</span>
                   )}
                 </p>
-                <p>
-                  <span className="font-semibold">Data:</span>{" "}
-                  {new Date(selectedOrder.order.created_at).toLocaleString("pt-BR")}
-                </p>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">Data:</span>
+                  {editingOrderDate?.orderId === selectedOrder.order.id && user?.role === 'admin' ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="datetime-local"
+                        defaultValue={new Date(selectedOrder.order.created_at).toISOString().slice(0, 16)}
+                        onBlur={(e) => {
+                          if (e.target.value) {
+                            handleUpdateOrderDate(selectedOrder.order.id, e.target.value);
+                          } else {
+                            setEditingOrderDate(null);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const target = e.target as HTMLInputElement;
+                            if (target.value) {
+                              handleUpdateOrderDate(selectedOrder.order.id, target.value);
+                            }
+                          } else if (e.key === "Escape") {
+                            setEditingOrderDate(null);
+                          }
+                        }}
+                        className="w-48 h-8"
+                        autoFocus
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditingOrderDate(null)}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  ) : (
+                    <span
+                      className={user?.role === 'admin' ? "cursor-pointer hover:bg-accent p-1 rounded" : ""}
+                      onClick={() => {
+                        if (user?.role === 'admin') {
+                          setEditingOrderDate({ orderId: selectedOrder.order.id, date: selectedOrder.order.created_at });
+                        }
+                      }}
+                      title={user?.role === 'admin' ? "Clique para editar a data" : ""}
+                    >
+                      {new Date(selectedOrder.order.created_at).toLocaleString("pt-BR")}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -918,6 +1054,26 @@ export default function POS() {
                   <FileText className="w-4 h-4 mr-2" />
                   Gerar Recibo
                 </Button>
+                {user?.role === 'admin' && (
+                  <Button
+                    variant="destructive"
+                    onClick={async () => {
+                      if (confirm("Tem certeza que deseja excluir esta venda? Esta ação não pode ser desfeita.")) {
+                        try {
+                          await ordersApi.delete(selectedOrder.order.id);
+                          setShowOrderModal(false);
+                          await loadRecentOrders();
+                          alert("Venda excluída com sucesso!");
+                        } catch (error) {
+                          alert("Erro ao excluir venda: " + error);
+                        }
+                      }
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Excluir Venda
+                  </Button>
+                )}
               </div>
             </div>
           )}

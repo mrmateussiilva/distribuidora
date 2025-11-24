@@ -20,7 +20,7 @@ use commands::{
     // Customers
     get_customers, get_customer, search_customers_by_phone, create_customer, update_customer, delete_customer,
             // Orders
-            create_order, get_orders, get_order, get_orders_by_customer, delete_order,
+            create_order, get_orders, get_order, get_orders_by_customer, update_order, delete_order,
     // Stock
     stock_in, stock_out, stock_adjust, get_stock_movements,
     // Dashboard
@@ -68,6 +68,7 @@ async fn main() {
             get_orders,
             get_order,
             get_orders_by_customer,
+            update_order,
             // Stock
             stock_in,
             stock_out,

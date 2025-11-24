@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   CreateOrderPayload,
+  UpdateOrderPayload,
   OrderWithCustomer,
   OrderWithItems,
 } from "../types";
@@ -20,6 +21,10 @@ export const ordersApi = {
 
   getByCustomer: async (customerId: number): Promise<OrderWithCustomer[]> => {
     return await invoke("get_orders_by_customer", { customerId });
+  },
+
+  update: async (id: number, payload: UpdateOrderPayload): Promise<void> => {
+    return await invoke("update_order", { id, payload });
   },
 
   delete: async (id: number): Promise<void> => {

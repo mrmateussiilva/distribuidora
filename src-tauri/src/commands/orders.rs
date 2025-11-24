@@ -2,7 +2,7 @@ use crate::auth::AuthState;
 use crate::db::{orders, DbPool};
 use crate::errors::Result;
 use crate::guards;
-use crate::models::{CreateOrderPayload, OrderWithCustomer, OrderWithItems};
+use crate::models::{CreateOrderPayload, UpdateOrderPayload, OrderWithCustomer, OrderWithItems};
 use tauri::State;
 
 #[tauri::command]
@@ -42,6 +42,17 @@ pub async fn get_orders_by_customer(
 ) -> Result<Vec<OrderWithCustomer>> {
     let _user = guards::get_authenticated_user(&auth_state)?;
     orders::get_orders_by_customer(pool.inner(), customer_id).await
+}
+
+#[tauri::command]
+pub async fn update_order(
+    id: i64,
+    payload: UpdateOrderPayload,
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<()> {
+    let _user = guards::require_admin(&auth_state)?;
+    orders::update_order(pool.inner(), id, payload).await
 }
 
 #[tauri::command]

@@ -104,6 +104,11 @@ pub struct CreateOrderPayload {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateOrderPayload {
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct OrderWithItems {
     pub order: OrderWithCustomer,
     pub items: Vec<OrderItemWithProduct>,
