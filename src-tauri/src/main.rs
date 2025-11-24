@@ -69,6 +69,7 @@ async fn main() {
             get_order,
             get_orders_by_customer,
             update_order,
+            delete_order,
             // Stock
             stock_in,
             stock_out,
