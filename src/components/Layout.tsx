@@ -73,7 +73,7 @@ export default function Layout() {
               "text-xl font-bold text-foreground transition-all duration-300 overflow-hidden whitespace-nowrap",
               isCollapsed ? "w-0 opacity-0" : "w-auto opacity-100"
             )}>
-              Sistema Distribuidora
+              S.G.D.
             </h1>
           </div>
         </div>

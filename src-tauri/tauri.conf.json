@@ -1,5 +1,5 @@
 {
-  "productName": "PDV Distribuidora",
+  "productName": "S.G.D. - Sistema de Gestão de Distribuidora",
   "version": "1.0.0",
   "identifier": "com.distribbuidora.pdv",
   "build": {
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "PDV - Distribuidora",
+        "title": "S.G.D. - Sistema de Gestão de Distribuidora",
         "width": 1400,
         "height": 900,
         "resizable": true,

@@ -1,6 +1,6 @@
-# PDV - Distribuidora de Gás e Água
+# S.G.D. - Sistema de Gestão de Distribuidora
 
-Sistema de Ponto de Venda (PDV) desenvolvido com Tauri v2, Rust e React para uma distribuidora de Gás e Água.
+Sistema de Gestão de Distribuidora desenvolvido com Tauri v2, Rust e React para gerenciamento completo de distribuidoras de Gás e Água.
 
 ## Características
 

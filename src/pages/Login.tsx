@@ -104,7 +104,8 @@ export default function LoginPage() {
               <Store className="w-8 h-8 text-primary" />
             </div>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">Sistema Distribuidora</h1>
+          <h1 className="text-3xl font-bold tracking-tight">S.G.D.</h1>
+          <p className="text-muted-foreground text-sm">Sistema de Gestão de Distribuidora</p>
           <p className="text-muted-foreground">
             Faça login para acessar o sistema
           </p>
@@ -216,7 +217,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-xs text-center text-muted-foreground">
-          Sistema de PDV para Distribuidora de Gás e Água
+          S.G.D. - Sistema de Gestão de Distribuidora
         </p>
       </div>
     </div>

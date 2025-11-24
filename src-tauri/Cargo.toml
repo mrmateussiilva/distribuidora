@@ -1,7 +1,7 @@
 [package]
 name = "distribbuidora-pdv"
 version = "1.0.0"
-description = "Sistema de PDV para Distribuidora de Gás e Água"
+description = "S.G.D. - Sistema de Gestão de Distribuidora"
 authors = ["you"]
 license = ""
 repository = ""
