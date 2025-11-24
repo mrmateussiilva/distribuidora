@@ -86,3 +86,46 @@ pub async fn logout(auth_state: State<'_, AuthState>) -> Result<()> {
 pub async fn get_current_user(auth_state: State<'_, AuthState>) -> Result<Option<SafeUser>> {
     Ok(auth_state.user.lock().unwrap().clone())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::test_helpers::{setup_test_db, cleanup_test_db};
+
+    #[tokio::test]
+    async fn test_seed_admin_user() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        // Primeira vez - deve criar
+        _internal_seed_admin_user(&pool, "admin123").await.unwrap();
+
+        // Segunda vez - não deve dar erro (já existe)
+        _internal_seed_admin_user(&pool, "admin123").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_login_success() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        // Cria usuário admin
+        _internal_seed_admin_user(&pool, "admin123").await.unwrap();
+
+        // Testa login (precisa de AuthState mockado, então vamos testar apenas a parte do banco)
+        use crate::db::users;
+        let user = users::get_user_by_username(&pool, "admin").await.unwrap();
+        assert_eq!(user.username, "admin");
+        assert_eq!(user.role, "admin");
+    }
+
+    #[tokio::test]
+    async fn test_login_invalid_username() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        use crate::db::users;
+        let result = users::get_user_by_username(&pool, "nonexistent").await;
+        assert!(result.is_err());
+    }
+}

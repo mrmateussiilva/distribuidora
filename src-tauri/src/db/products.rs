@@ -183,3 +183,250 @@ pub async fn delete_product(pool: &SqlitePool, id: i64) -> Result<(), AppError> 
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::test_helpers::{setup_test_db, cleanup_test_db};
+
+    #[tokio::test]
+    async fn test_create_product() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let payload = CreateProductPayload {
+            name: "Água 20L".to_string(),
+            description: Some("Água mineral".to_string()),
+            r#type: "water".to_string(),
+            price_refill: 5.0,
+            price_full: 10.0,
+            stock_full: Some(100),
+            stock_empty: Some(0),
+        };
+
+        let id = create_product(&pool, payload).await.unwrap();
+        assert!(id > 0);
+
+        let product = get_product_by_id(&pool, id).await.unwrap();
+        assert_eq!(product.name, "Água 20L");
+        assert_eq!(product.price_refill, 5.0);
+        assert_eq!(product.price_full, 10.0);
+        assert_eq!(product.stock_full, 100);
+    }
+
+    #[tokio::test]
+    async fn test_create_product_validation() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        // Nome vazio
+        let payload = CreateProductPayload {
+            name: "".to_string(),
+            description: None,
+            r#type: "water".to_string(),
+            price_refill: 5.0,
+            price_full: 10.0,
+            stock_full: None,
+            stock_empty: None,
+        };
+        assert!(create_product(&pool, payload).await.is_err());
+
+        // Tipo inválido
+        let payload = CreateProductPayload {
+            name: "Produto".to_string(),
+            description: None,
+            r#type: "invalid".to_string(),
+            price_refill: 5.0,
+            price_full: 10.0,
+            stock_full: None,
+            stock_empty: None,
+        };
+        assert!(create_product(&pool, payload).await.is_err());
+
+        // Preço negativo
+        let payload = CreateProductPayload {
+            name: "Produto".to_string(),
+            description: None,
+            r#type: "water".to_string(),
+            price_refill: -5.0,
+            price_full: 10.0,
+            stock_full: None,
+            stock_empty: None,
+        };
+        assert!(create_product(&pool, payload).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_get_all_products() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        // Cria alguns produtos
+        let payload1 = CreateProductPayload {
+            name: "Água 20L".to_string(),
+            description: None,
+            r#type: "water".to_string(),
+            price_refill: 5.0,
+            price_full: 10.0,
+            stock_full: None,
+            stock_empty: None,
+        };
+        create_product(&pool, payload1).await.unwrap();
+
+        let payload2 = CreateProductPayload {
+            name: "Gás 13kg".to_string(),
+            description: None,
+            r#type: "gas".to_string(),
+            price_refill: 45.0,
+            price_full: 80.0,
+            stock_full: None,
+            stock_empty: None,
+        };
+        create_product(&pool, payload2).await.unwrap();
+
+        let products = get_all_products(&pool).await.unwrap();
+        assert_eq!(products.len(), 2);
+        assert!(products.iter().any(|p| p.name == "Água 20L"));
+        assert!(products.iter().any(|p| p.name == "Gás 13kg"));
+    }
+
+    #[tokio::test]
+    async fn test_get_product_by_id() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let payload = CreateProductPayload {
+            name: "Água 20L".to_string(),
+            description: Some("Teste".to_string()),
+            r#type: "water".to_string(),
+            price_refill: 5.0,
+            price_full: 10.0,
+            stock_full: None,
+            stock_empty: None,
+        };
+
+        let id = create_product(&pool, payload).await.unwrap();
+        let product = get_product_by_id(&pool, id).await.unwrap();
+
+        assert_eq!(product.name, "Água 20L");
+        assert_eq!(product.description, Some("Teste".to_string()));
+
+        // Produto inexistente
+        assert!(get_product_by_id(&pool, 99999).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_update_product() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let payload = CreateProductPayload {
+            name: "Água 20L".to_string(),
+            description: None,
+            r#type: "water".to_string(),
+            price_refill: 5.0,
+            price_full: 10.0,
+            stock_full: None,
+            stock_empty: None,
+        };
+
+        let id = create_product(&pool, payload).await.unwrap();
+
+        let update_payload = UpdateProductPayload {
+            name: Some("Água 20L Premium".to_string()),
+            description: Some("Água premium".to_string()),
+            r#type: None,
+            price_refill: Some(6.0),
+            price_full: None,
+            stock_full: Some(150),
+            stock_empty: None,
+        };
+
+        update_product(&pool, id, update_payload).await.unwrap();
+
+        let product = get_product_by_id(&pool, id).await.unwrap();
+        assert_eq!(product.name, "Água 20L Premium");
+        assert_eq!(product.description, Some("Água premium".to_string()));
+        assert_eq!(product.price_refill, 6.0);
+        assert_eq!(product.price_full, 10.0); // Não foi alterado
+        assert_eq!(product.stock_full, 150);
+    }
+
+    #[tokio::test]
+    async fn test_update_product_validation() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let payload = CreateProductPayload {
+            name: "Água 20L".to_string(),
+            description: None,
+            r#type: "water".to_string(),
+            price_refill: 5.0,
+            price_full: 10.0,
+            stock_full: None,
+            stock_empty: None,
+        };
+
+        let id = create_product(&pool, payload).await.unwrap();
+
+        // Nome vazio
+        let update_payload = UpdateProductPayload {
+            name: Some("".to_string()),
+            description: None,
+            r#type: None,
+            price_refill: None,
+            price_full: None,
+            stock_full: None,
+            stock_empty: None,
+        };
+        assert!(update_product(&pool, id, update_payload).await.is_err());
+
+        // Tipo inválido
+        let update_payload = UpdateProductPayload {
+            name: None,
+            description: None,
+            r#type: Some("invalid".to_string()),
+            price_refill: None,
+            price_full: None,
+            stock_full: None,
+            stock_empty: None,
+        };
+        assert!(update_product(&pool, id, update_payload).await.is_err());
+
+        // Preço negativo
+        let update_payload = UpdateProductPayload {
+            name: None,
+            description: None,
+            r#type: None,
+            price_refill: Some(-5.0),
+            price_full: None,
+            stock_full: None,
+            stock_empty: None,
+        };
+        assert!(update_product(&pool, id, update_payload).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_product() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let payload = CreateProductPayload {
+            name: "Água 20L".to_string(),
+            description: None,
+            r#type: "water".to_string(),
+            price_refill: 5.0,
+            price_full: 10.0,
+            stock_full: None,
+            stock_empty: None,
+        };
+
+        let id = create_product(&pool, payload).await.unwrap();
+        assert!(get_product_by_id(&pool, id).await.is_ok());
+
+        delete_product(&pool, id).await.unwrap();
+        assert!(get_product_by_id(&pool, id).await.is_err());
+
+        // Tentar deletar produto inexistente
+        assert!(delete_product(&pool, 99999).await.is_err());
+    }
+}

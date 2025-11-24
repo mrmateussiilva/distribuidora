@@ -8,6 +8,9 @@ mod commands;
 mod auth;
 mod guards;
 
+#[cfg(test)]
+mod test_helpers;
+
 use db::{init_db, DbPool};
 use tauri::Manager;
 

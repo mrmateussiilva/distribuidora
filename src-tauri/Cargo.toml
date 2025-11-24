@@ -26,6 +26,9 @@ argon2 = "0.5"
 rand_core = { version = "0.6", features = ["std"] }
 getrandom = { version = "0.2", features = ["js"] }
 
+[dev-dependencies]
+tokio-test = "0.4"
+
 [features]
 # This feature is used for production builds or when `devPath` points to the filesystem
 # DO NOT REMOVE!!

@@ -1,5 +1,5 @@
 use crate::models::{
-    Order, OrderWithCustomer, OrderItem, OrderItemPayload, CreateOrderPayload,
+    OrderWithCustomer, OrderItemPayload, CreateOrderPayload,
     OrderWithItems, OrderItemWithProduct,
 };
 use crate::errors::AppError;
@@ -149,5 +149,221 @@ pub async fn get_orders_by_customer(pool: &SqlitePool, customer_id: i64) -> Resu
     .await?;
     
     Ok(orders)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::test_helpers::{setup_test_db, cleanup_test_db};
+    use crate::db::products;
+    use crate::db::customers;
+    use crate::models::{CreateProductPayload, CreateCustomerPayload};
+
+    async fn create_test_product(pool: &SqlitePool) -> i64 {
+        let payload = CreateProductPayload {
+            name: "Água 20L".to_string(),
+            description: None,
+            r#type: "water".to_string(),
+            price_refill: 5.0,
+            price_full: 10.0,
+            stock_full: Some(100),
+            stock_empty: Some(0),
+        };
+        products::create_product(pool, payload).await.unwrap()
+    }
+
+    async fn create_test_customer(pool: &SqlitePool) -> i64 {
+        let payload = CreateCustomerPayload {
+            name: "João Silva".to_string(),
+            phone: None,
+            address: None,
+            notes: None,
+        };
+        customers::create_customer(pool, payload).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_create_order() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let product_id = create_test_product(&pool).await;
+        let customer_id = create_test_customer(&pool).await;
+
+        let payload = CreateOrderPayload {
+            customer_id: Some(customer_id),
+            items: vec![
+                OrderItemPayload {
+                    product_id,
+                    quantity: 2,
+                    returned_bottle: false,
+                    unit_price: 10.0,
+                },
+            ],
+        };
+
+        let order_id = create_order(&pool, payload).await.unwrap();
+        assert!(order_id > 0);
+
+        let order = get_order_by_id(&pool, order_id).await.unwrap();
+        assert_eq!(order.order.total, 20.0);
+        assert_eq!(order.items.len(), 1);
+        assert_eq!(order.items[0].quantity, 2);
+
+        // Verifica que o estoque foi atualizado
+        let product = products::get_product_by_id(&pool, product_id).await.unwrap();
+        assert_eq!(product.stock_full, 98); // 100 - 2
+    }
+
+    #[tokio::test]
+    async fn test_create_order_with_returned_bottle() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let product_id = create_test_product(&pool).await;
+
+        let payload = CreateOrderPayload {
+            customer_id: None,
+            items: vec![
+                OrderItemPayload {
+                    product_id,
+                    quantity: 1,
+                    returned_bottle: true,
+                    unit_price: 5.0,
+                },
+            ],
+        };
+
+        create_order(&pool, payload).await.unwrap();
+
+        // Verifica que o estoque foi atualizado corretamente
+        let product = products::get_product_by_id(&pool, product_id).await.unwrap();
+        assert_eq!(product.stock_full, 99); // 100 - 1
+        assert_eq!(product.stock_empty, 1); // 0 + 1 (casco retornado)
+    }
+
+    #[tokio::test]
+    async fn test_create_order_validation() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        // Pedido sem itens
+        let payload = CreateOrderPayload {
+            customer_id: None,
+            items: vec![],
+        };
+        assert!(create_order(&pool, payload).await.is_err());
+
+        // Produto inexistente
+        let payload = CreateOrderPayload {
+            customer_id: None,
+            items: vec![
+                OrderItemPayload {
+                    product_id: 99999,
+                    quantity: 1,
+                    returned_bottle: false,
+                    unit_price: 10.0,
+                },
+            ],
+        };
+        assert!(create_order(&pool, payload).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_create_order_insufficient_stock() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let product_id = create_test_product(&pool).await;
+
+        let payload = CreateOrderPayload {
+            customer_id: None,
+            items: vec![
+                OrderItemPayload {
+                    product_id,
+                    quantity: 101, // Mais que o estoque disponível (100)
+                    returned_bottle: false,
+                    unit_price: 10.0,
+                },
+            ],
+        };
+
+        assert!(create_order(&pool, payload).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_get_all_orders() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let product_id = create_test_product(&pool).await;
+
+        let payload1 = CreateOrderPayload {
+            customer_id: None,
+            items: vec![
+                OrderItemPayload {
+                    product_id,
+                    quantity: 1,
+                    returned_bottle: false,
+                    unit_price: 10.0,
+                },
+            ],
+        };
+        create_order(&pool, payload1).await.unwrap();
+
+        let payload2 = CreateOrderPayload {
+            customer_id: None,
+            items: vec![
+                OrderItemPayload {
+                    product_id,
+                    quantity: 2,
+                    returned_bottle: false,
+                    unit_price: 10.0,
+                },
+            ],
+        };
+        create_order(&pool, payload2).await.unwrap();
+
+        let orders = get_all_orders(&pool).await.unwrap();
+        assert_eq!(orders.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_orders_by_customer() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let product_id = create_test_product(&pool).await;
+        let customer_id = create_test_customer(&pool).await;
+
+        let payload1 = CreateOrderPayload {
+            customer_id: Some(customer_id),
+            items: vec![
+                OrderItemPayload {
+                    product_id,
+                    quantity: 1,
+                    returned_bottle: false,
+                    unit_price: 10.0,
+                },
+            ],
+        };
+        create_order(&pool, payload1).await.unwrap();
+
+        let payload2 = CreateOrderPayload {
+            customer_id: None,
+            items: vec![
+                OrderItemPayload {
+                    product_id,
+                    quantity: 1,
+                    returned_bottle: false,
+                    unit_price: 10.0,
+                },
+            ],
+        };
+        create_order(&pool, payload2).await.unwrap();
+
+        let orders = get_orders_by_customer(&pool, customer_id).await.unwrap();
+        assert_eq!(orders.len(), 1);
+    }
 }
 

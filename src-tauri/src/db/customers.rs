@@ -131,3 +131,167 @@ pub async fn delete_customer(pool: &SqlitePool, id: i64) -> Result<(), AppError>
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::test_helpers::{setup_test_db, cleanup_test_db};
+
+    #[tokio::test]
+    async fn test_create_customer() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let payload = CreateCustomerPayload {
+            name: "João Silva".to_string(),
+            phone: Some("11999999999".to_string()),
+            address: Some("Rua Teste, 123".to_string()),
+            notes: Some("Cliente preferencial".to_string()),
+        };
+
+        let id = create_customer(&pool, payload).await.unwrap();
+        assert!(id > 0);
+
+        let customer = get_customer_by_id(&pool, id).await.unwrap();
+        assert_eq!(customer.name, "João Silva");
+        assert_eq!(customer.phone, Some("11999999999".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_create_customer_validation() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        // Nome vazio
+        let payload = CreateCustomerPayload {
+            name: "".to_string(),
+            phone: None,
+            address: None,
+            notes: None,
+        };
+        assert!(create_customer(&pool, payload).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_get_all_customers() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let payload1 = CreateCustomerPayload {
+            name: "João Silva".to_string(),
+            phone: None,
+            address: None,
+            notes: None,
+        };
+        create_customer(&pool, payload1).await.unwrap();
+
+        let payload2 = CreateCustomerPayload {
+            name: "Maria Santos".to_string(),
+            phone: None,
+            address: None,
+            notes: None,
+        };
+        create_customer(&pool, payload2).await.unwrap();
+
+        let customers = get_all_customers(&pool).await.unwrap();
+        assert_eq!(customers.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_search_customers_by_phone() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let payload1 = CreateCustomerPayload {
+            name: "João Silva".to_string(),
+            phone: Some("11999999999".to_string()),
+            address: None,
+            notes: None,
+        };
+        create_customer(&pool, payload1).await.unwrap();
+
+        let payload2 = CreateCustomerPayload {
+            name: "Maria Santos".to_string(),
+            phone: Some("11888888888".to_string()),
+            address: None,
+            notes: None,
+        };
+        create_customer(&pool, payload2).await.unwrap();
+
+        let customers = search_customers_by_phone(&pool, "9999").await.unwrap();
+        assert_eq!(customers.len(), 1);
+        assert_eq!(customers[0].name, "João Silva");
+    }
+
+    #[tokio::test]
+    async fn test_update_customer() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let payload = CreateCustomerPayload {
+            name: "João Silva".to_string(),
+            phone: Some("11999999999".to_string()),
+            address: None,
+            notes: None,
+        };
+
+        let id = create_customer(&pool, payload).await.unwrap();
+
+        let update_payload = UpdateCustomerPayload {
+            name: Some("João Silva Santos".to_string()),
+            phone: Some("11777777777".to_string()),
+            address: Some("Nova Rua".to_string()),
+            notes: None,
+        };
+
+        update_customer(&pool, id, update_payload).await.unwrap();
+
+        let customer = get_customer_by_id(&pool, id).await.unwrap();
+        assert_eq!(customer.name, "João Silva Santos");
+        assert_eq!(customer.phone, Some("11777777777".to_string()));
+        assert_eq!(customer.address, Some("Nova Rua".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_update_customer_validation() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let payload = CreateCustomerPayload {
+            name: "João Silva".to_string(),
+            phone: None,
+            address: None,
+            notes: None,
+        };
+
+        let id = create_customer(&pool, payload).await.unwrap();
+
+        // Nome vazio
+        let update_payload = UpdateCustomerPayload {
+            name: Some("".to_string()),
+            phone: None,
+            address: None,
+            notes: None,
+        };
+        assert!(update_customer(&pool, id, update_payload).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_customer() {
+        let pool = setup_test_db().await;
+        cleanup_test_db(&pool).await;
+
+        let payload = CreateCustomerPayload {
+            name: "João Silva".to_string(),
+            phone: None,
+            address: None,
+            notes: None,
+        };
+
+        let id = create_customer(&pool, payload).await.unwrap();
+        assert!(get_customer_by_id(&pool, id).await.is_ok());
+
+        delete_customer(&pool, id).await.unwrap();
+        assert!(get_customer_by_id(&pool, id).await.is_err());
+    }
+}
+

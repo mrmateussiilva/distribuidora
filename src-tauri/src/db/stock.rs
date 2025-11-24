@@ -1,4 +1,4 @@
-use crate::models::{StockMovement, StockMovementWithProduct, Product, TopProduct, DashboardStats};
+use crate::models::{StockMovementWithProduct, Product, TopProduct, DashboardStats};
 use crate::errors::AppError;
 use sqlx::SqlitePool;
 
