@@ -51,7 +51,7 @@ pub async fn delete_product(
     pool: State<'_, DbPool>,
     auth_state: State<'_, AuthState>,
 ) -> Result<()> {
-    let _user = guards::get_authenticated_user(&auth_state)?;
+    let _user = guards::require_admin(&auth_state)?;
     products::delete_product(pool.inner(), id).await
 }
 

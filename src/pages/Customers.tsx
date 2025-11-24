@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useCustomersStore } from "../state/customersStore";
+import { useAuthStore } from "@/state/authStore";
 import { customersApi } from "../api/customers";
 import { ordersApi } from "../api/orders";
 import type { Customer, CreateCustomerPayload, OrderWithCustomer } from "../types";
@@ -29,6 +30,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export default function Customers() {
   const { customers, loading, fetchCustomers, removeCustomer } =
     useCustomersStore();
+  const { user } = useAuthStore();
   const [showModal, setShowModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [searchPhone, setSearchPhone] = useState("");
@@ -201,13 +203,15 @@ export default function Customers() {
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(customer.id)}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
+                      {user?.role === 'admin' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(customer.id)}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

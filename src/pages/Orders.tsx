@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { ordersApi } from "../api/orders";
 import { receiptsApi } from "../api/receipts";
+import { useAuthStore } from "@/state/authStore";
 import type { OrderWithCustomer, OrderWithItems } from "../types";
-import { FileText, Eye } from "lucide-react";
+import { FileText, Eye, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,6 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 
 export default function Orders() {
+  const { user } = useAuthStore();
   const [orders, setOrders] = useState<OrderWithCustomer[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<OrderWithItems | null>(
@@ -67,6 +69,19 @@ export default function Orders() {
       }
     } catch (error) {
       alert("Erro ao gerar recibo: " + error);
+    }
+  };
+
+  const handleDeleteOrder = async (orderId: number) => {
+    if (!confirm("Tem certeza que deseja excluir esta venda? Esta ação não pode ser desfeita e o estoque será revertido.")) {
+      return;
+    }
+
+    try {
+      await ordersApi.delete(orderId);
+      await loadOrders();
+    } catch (error) {
+      alert("Erro ao excluir venda: " + error);
     }
   };
 
@@ -138,6 +153,16 @@ export default function Orders() {
                       >
                         <FileText className="w-4 h-4" />
                       </Button>
+                      {user?.role === 'admin' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteOrder(order.id)}
+                          title="Excluir venda"
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

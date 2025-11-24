@@ -21,5 +21,9 @@ export const ordersApi = {
   getByCustomer: async (customerId: number): Promise<OrderWithCustomer[]> => {
     return await invoke("get_orders_by_customer", { customerId });
   },
+
+  delete: async (id: number): Promise<void> => {
+    return await invoke("delete_order", { id });
+  },
 };
 

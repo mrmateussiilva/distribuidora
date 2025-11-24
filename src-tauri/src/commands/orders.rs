@@ -44,3 +44,13 @@ pub async fn get_orders_by_customer(
     orders::get_orders_by_customer(pool.inner(), customer_id).await
 }
 
+#[tauri::command]
+pub async fn delete_order(
+    id: i64,
+    pool: State<'_, DbPool>,
+    auth_state: State<'_, AuthState>,
+) -> Result<()> {
+    let _user = guards::require_admin(&auth_state)?;
+    orders::delete_order(pool.inner(), id).await
+}
+

@@ -151,6 +151,50 @@ pub async fn get_orders_by_customer(pool: &SqlitePool, customer_id: i64) -> Resu
     Ok(orders)
 }
 
+pub async fn delete_order(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+    // Verifica se o pedido existe
+    let order = get_order_by_id(pool, id).await?;
+
+    // Inicia transação
+    let mut tx = pool.begin().await?;
+
+    // Reverte o estoque para cada item do pedido
+    for item in &order.items {
+        // Adiciona de volta ao estoque
+        sqlx::query("UPDATE products SET stock_full = stock_full + ? WHERE id = ?")
+            .bind(item.quantity)
+            .bind(item.product_id)
+            .execute(&mut *tx)
+            .await?;
+
+        // Se tinha casco retornado, remove do stock_empty
+        if item.returned_bottle {
+            sqlx::query("UPDATE products SET stock_empty = stock_empty - ? WHERE id = ?")
+                .bind(item.quantity)
+                .bind(item.product_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
+
+    // Deleta os itens do pedido
+    sqlx::query("DELETE FROM order_items WHERE order_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    // Deleta o pedido
+    sqlx::query("DELETE FROM orders WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    // Commit transação
+    tx.commit().await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
