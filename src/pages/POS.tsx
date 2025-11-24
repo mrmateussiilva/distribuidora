@@ -3,11 +3,12 @@ import { useProductsStore } from "../state/productsStore";
 import { useCustomersStore } from "../state/customersStore";
 import { useCartStore } from "../state/cartStore";
 import { ordersApi } from "../api/orders";
-import type { Customer, Product } from "../types";
-import { 
-  CheckCircle2, Trash2, Plus, Search, X, Keyboard, Copy, 
+import { receiptsApi } from "../api/receipts";
+import type { Customer, Product, OrderWithCustomer, OrderWithItems } from "../types";
+import {
+  CheckCircle2, Trash2, Plus, Search, X, Keyboard, Copy,
   RotateCcw, TrendingUp, Package, DollarSign, AlertTriangle,
-  ChevronDown, ChevronUp, Filter
+  ChevronDown, ChevronUp, Filter, History, Eye, FileText
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,9 +21,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface ReceiptRow {
   id: number;
@@ -36,7 +50,7 @@ interface ReceiptRow {
 export default function POS() {
   const { products, fetchProducts } = useProductsStore();
   const { customers, fetchCustomers } = useCustomersStore();
-  const { getItemPrice, getTotal, clear } = useCartStore();
+  const { getItemPrice } = useCartStore();
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [orderSuccess, setOrderSuccess] = useState(false);
@@ -50,13 +64,37 @@ export default function POS() {
   const [productFilter, setProductFilter] = useState<string>("all");
   const [showStats, setShowStats] = useState(true);
   const [lastOrderTotal, setLastOrderTotal] = useState<number | null>(null);
+  const [recentOrders, setRecentOrders] = useState<OrderWithCustomer[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<OrderWithItems | null>(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const productSearchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchProducts();
     fetchCustomers();
+    loadRecentOrders();
   }, [fetchProducts, fetchCustomers]);
+
+  const loadRecentOrders = async () => {
+    setLoadingOrders(true);
+    try {
+      const orders = await ordersApi.getAll();
+      // Pega as últimas 10 vendas, ordenadas por data (mais recentes primeiro)
+      const sorted = orders.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setRecentOrders(sorted.slice(0, 10));
+    } catch (error) {
+      // Silenciosamente falha se não houver autenticação ou outros erros
+      // Não quebra a aplicação, apenas não mostra as vendas
+      console.error("Erro ao carregar últimas vendas:", error);
+      setRecentOrders([]);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
 
   useEffect(() => {
     if (editingCell && inputRef.current) {
@@ -64,15 +102,6 @@ export default function POS() {
       inputRef.current.select();
     }
   }, [editingCell]);
-
-  const getCurrentDate = () => {
-    const now = new Date();
-    return now.toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-    });
-  };
 
   const calculateRowTotal = (row: ReceiptRow) => {
     if (!row.product) return 0;
@@ -95,14 +124,14 @@ export default function POS() {
 
   const handleCheckout = useCallback(async () => {
     const validRows = rows.filter((row) => row.product !== null && row.quantity > 0);
-    
+
     if (validRows.length === 0) {
       alert("Adicione pelo menos um produto à venda");
       return;
     }
 
     // Valida estoque
-    const lowStockRows = validRows.filter((row) => 
+    const lowStockRows = validRows.filter((row) =>
       row.product && row.quantity > row.product.stock_full
     );
     if (lowStockRows.length > 0) {
@@ -113,14 +142,14 @@ export default function POS() {
 
     try {
       const orderItems = validRows.map((row) => {
-        const price = row.customPrice !== undefined 
-          ? row.customPrice 
+        const price = row.customPrice !== undefined
+          ? row.customPrice
           : getItemPrice({
-              product: row.product!,
-              quantity: row.quantity,
-              returnedBottle: row.returnedBottle,
-            });
-        
+            product: row.product!,
+            quantity: row.quantity,
+            returnedBottle: row.returnedBottle,
+          });
+
         return {
           product_id: row.product!.id,
           quantity: row.quantity,
@@ -140,6 +169,7 @@ export default function POS() {
       setOrderSuccess(true);
       setTimeout(() => setOrderSuccess(false), 3000);
       await fetchProducts();
+      await loadRecentOrders();
     } catch (error) {
       alert("Erro ao finalizar pedido: " + error);
     }
@@ -170,21 +200,21 @@ export default function POS() {
         e.preventDefault();
         const currentRows = rows;
         const validRows = currentRows.filter((r) => r.product && r.quantity > 0);
-        const lowStockRows = validRows.filter((r) => 
+        const lowStockRows = validRows.filter((r) =>
           r.product && r.quantity > r.product.stock_full
         );
         if (validRows.length > 0 && lowStockRows.length === 0) {
           // Executa checkout diretamente aqui para evitar dependência circular
           try {
             const orderItems = validRows.map((row) => {
-              const price = row.customPrice !== undefined 
-                ? row.customPrice 
+              const price = row.customPrice !== undefined
+                ? row.customPrice
                 : getItemPrice({
-                    product: row.product!,
-                    quantity: row.quantity,
-                    returnedBottle: row.returnedBottle,
-                  });
-              
+                  product: row.product!,
+                  quantity: row.quantity,
+                  returnedBottle: row.returnedBottle,
+                });
+
               return {
                 product_id: row.product!.id,
                 quantity: row.quantity,
@@ -204,6 +234,7 @@ export default function POS() {
             setOrderSuccess(true);
             setTimeout(() => setOrderSuccess(false), 3000);
             await fetchProducts();
+            await loadRecentOrders();
           } catch (error) {
             alert("Erro ao finalizar pedido: " + error);
           }
@@ -248,12 +279,12 @@ export default function POS() {
         prev.map((row) =>
           row.id === rowId
             ? {
-                ...row,
-                product,
-                unitPrice: product.price_full,
-                customPrice: undefined,
-                quantity: row.quantity || 1,
-              }
+              ...row,
+              product,
+              unitPrice: product.price_full,
+              customPrice: undefined,
+              quantity: row.quantity || 1,
+            }
             : row
         )
       );
@@ -307,7 +338,7 @@ export default function POS() {
     setRows((prev) =>
       prev.map((row) => {
         if (row.id !== rowId) return row;
-        
+
         if (field === "quantity") {
           const qty = Number(value) || 1;
           // Valida estoque
@@ -331,14 +362,13 @@ export default function POS() {
   const handleKeyDown = (
     e: React.KeyboardEvent,
     rowId: number,
-    field: string,
-    currentValue: string | number
+    field: string
   ) => {
     if (e.key === "Enter") {
       e.preventDefault();
       const target = e.target as HTMLInputElement;
       handleCellEdit(rowId, field, target.value);
-      
+
       if (field === "quantity") {
         setEditingCell({ rowId, field: "price" });
       } else if (field === "price") {
@@ -397,72 +427,42 @@ export default function POS() {
     }
   };
 
+  const handleViewOrder = async (orderId: number) => {
+    try {
+      const order = await ordersApi.getById(orderId);
+      setSelectedOrder(order);
+      setShowOrderModal(true);
+    } catch (error) {
+      alert("Erro ao carregar detalhes da venda: " + error);
+    }
+  };
+
+  const handleGenerateReceipt = async (orderId: number) => {
+    try {
+      const html = await receiptsApi.generate(orderId);
+      // Abre em nova janela para impressão
+      const newWindow = window.open();
+      if (newWindow) {
+        newWindow.document.write(html);
+        newWindow.document.close();
+      }
+    } catch (error) {
+      alert("Erro ao gerar recibo: " + error);
+    }
+  };
+
   const lowStockProducts = getLowStockProducts();
 
   return (
-    <div className="h-full flex flex-col bg-background p-6 overflow-auto">
-      {/* Barra Superior com Busca e Filtros */}
-      <div className="mb-4 space-y-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              ref={productSearchRef}
-              placeholder="Buscar produto (Ctrl+K)..."
-              value={productSearch}
-              onChange={(e) => setProductSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && filteredProducts.length > 0) {
-                  handleQuickAddProduct(filteredProducts[0]);
-                }
-              }}
-              className="pl-10"
-            />
-            {productSearch && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6"
-                onClick={() => setProductSearch("")}
-              >
-                <X className="w-3 h-3" />
-              </Button>
-            )}
-            {productSearch && filteredProducts.length > 0 && (
-              <div className="absolute z-50 mt-1 bg-popover border rounded-lg shadow-lg max-h-60 overflow-y-auto w-full">
-                {filteredProducts.slice(0, 5).map((product) => (
-                  <div
-                    key={product.id}
-                    className="p-2 hover:bg-accent cursor-pointer flex justify-between items-center border-b last:border-b-0"
-                    onClick={() => handleQuickAddProduct(product)}
-                  >
-                    <div>
-                      <div className="font-medium">{product.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        R$ {product.price_full.toFixed(2)} • Estoque: {product.stock_full}
-                      </div>
-                    </div>
-                    <Badge variant={product.stock_full <= 0 ? "destructive" : "secondary"}>
-                      {product.stock_full <= 0 ? "Sem estoque" : "Disponível"}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <Select value={productFilter} onValueChange={setProductFilter}>
-            <SelectTrigger className="w-[140px]">
-              <Filter className="w-4 h-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="water">Água</SelectItem>
-              <SelectItem value="gas">Gás</SelectItem>
-              <SelectItem value="coal">Carvão</SelectItem>
-              <SelectItem value="other">Outros</SelectItem>
-            </SelectContent>
-          </Select>
+    <div className="h-full flex flex-col gap-4 p-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Ponto de Venda</h1>
+          <p className="text-muted-foreground">
+            Sistema de vendas rápido e eficiente
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="icon"
@@ -472,366 +472,594 @@ export default function POS() {
             <Keyboard className="w-4 h-4" />
           </Button>
         </div>
+      </div>
 
-        {/* Estatísticas Rápidas */}
-        {showStats && (
-          <Card className="p-3">
-            <div className="grid grid-cols-4 gap-4">
-              <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 text-muted-foreground" />
-                <div>
-                  <div className="text-xs text-muted-foreground">Itens</div>
-                  <div className="font-semibold">{getTotalQuantity()}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-muted-foreground" />
-                <div>
-                  <div className="text-xs text-muted-foreground">Total</div>
-                  <div className="font-semibold">R$ {getTotalAmount().toFixed(2)}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-muted-foreground" />
-                <div>
-                  <div className="text-xs text-muted-foreground">Média</div>
-                  <div className="font-semibold">R$ {getAveragePrice().toFixed(2)}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <AlertTriangle className={cn(
-                  "w-4 h-4",
-                  lowStockProducts.length > 0 ? "text-destructive" : "text-muted-foreground"
-                )} />
-                <div>
-                  <div className="text-xs text-muted-foreground">Atenção</div>
-                  <div className={cn(
-                    "font-semibold",
-                    lowStockProducts.length > 0 && "text-destructive"
-                  )}>
-                    {lowStockProducts.length} {lowStockProducts.length === 1 ? "item" : "itens"}
-                  </div>
-                </div>
-          </div>
-            </div>
-          </Card>
-        )}
-
-        {/* Atalhos de Teclado */}
-        {showShortcuts && (
-          <Card className="p-4">
-            <h3 className="font-semibold mb-2">Atalhos de Teclado:</h3>
-            <div className="grid grid-cols-3 gap-2 text-sm">
-              <div><kbd className="px-2 py-1 bg-background rounded border">Ctrl+K</kbd> - Buscar produto</div>
-              <div><kbd className="px-2 py-1 bg-background rounded border">Ctrl+Enter</kbd> - Finalizar venda</div>
-              <div><kbd className="px-2 py-1 bg-background rounded border">F1</kbd> - Mostrar/Ocultar atalhos</div>
-              <div><kbd className="px-2 py-1 bg-background rounded border">Enter</kbd> - Confirmar edição</div>
-              <div><kbd className="px-2 py-1 bg-background rounded border">Esc</kbd> - Cancelar edição</div>
-              <div><kbd className="px-2 py-1 bg-background rounded border">↑↓</kbd> - Navegar entre linhas</div>
-            </div>
-          </Card>
-        )}
-        </div>
-
-      {/* Cabeçalho do Recibo */}
-      <div className="mb-4 border-b-2 border-foreground pb-3">
-        <div className="flex justify-between items-start">
+      {/* Mensagem de sucesso */}
+      {orderSuccess && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-2">
+          <CheckCircle2 className="w-5 h-5 text-green-600" />
           <div>
-            <h1 className="text-5xl font-black mb-0 leading-tight">MORAIS</h1>
-            <p className="text-xl italic text-muted-foreground -mt-1">distribuidora</p>
-            <div className="mt-3 space-y-0.5 text-xs">
-              <p className="font-medium">Morais Distribuidora de água mineral</p>
-              <p>Av. Tailândia – nº 127, Bairro Columbia - Colatina - ES</p>
-              <p>(27) 99893-2758 / (27) 99938-1129</p>
-              <p>moraisdistribuidora@gmail.com</p>
-            </div>
+            <p className="font-semibold text-green-900">Venda finalizada com sucesso!</p>
+            {lastOrderTotal && (
+              <p className="text-sm text-green-700">
+                Total: R$ {lastOrderTotal.toFixed(2)}
+              </p>
+            )}
           </div>
-          <div className="text-right space-y-3">
-            <p className="text-sm font-semibold">Nota de controle N°.: 0002</p>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold w-16 text-right">CLIENTE:</span>
+        </div>
+      )}
+
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 overflow-hidden">
+        {/* Coluna Esquerda - Produtos e Carrinho */}
+        <div className="lg:col-span-2 flex flex-col gap-4 overflow-hidden">
+          {/* Busca de Produtos */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    ref={productSearchRef}
+                    placeholder="Buscar produto (Ctrl+K)..."
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Select value={productFilter} onValueChange={setProductFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <Filter className="w-4 h-4 mr-2" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="water">Água</SelectItem>
+                    <SelectItem value="gas">Gás</SelectItem>
+                    <SelectItem value="coal">Carvão</SelectItem>
+                    <SelectItem value="other">Outros</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Lista de Produtos */}
+          <Card className="flex-1 overflow-hidden flex flex-col">
+            <CardHeader>
+              <CardTitle>Produtos</CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {filteredProducts.map((product) => (
+                  <Button
+                    key={product.id}
+                    variant="outline"
+                    className="h-auto flex flex-col items-start p-3 hover:bg-accent"
+                    onClick={() => handleQuickAddProduct(product)}
+                  >
+                    <div className="w-full">
+                      <p className="font-semibold text-left">{product.name}</p>
+                      <p className="text-xs text-muted-foreground text-left mt-1">
+                        {product.description}
+                      </p>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-sm font-bold">
+                          R$ {product.price_full.toFixed(2)}
+                        </span>
+                        <Badge variant={product.stock_full > 0 ? "default" : "destructive"}>
+                          Est: {product.stock_full}
+                        </Badge>
+                      </div>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Carrinho/Recibo */}
+          <Card className="flex-1 overflow-hidden flex flex-col">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Recibo</CardTitle>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearAll}
+                    title="Limpar tudo"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto flex flex-col">
+              {/* Seleção de Cliente */}
+              <div className="mb-4">
+                <Label>Cliente</Label>
                 <Select
-                  value={selectedCustomer?.id?.toString() || "none"}
+                  value={selectedCustomer?.id.toString() || "none"}
                   onValueChange={(value) => {
                     if (value === "none") {
                       setSelectedCustomer(null);
                     } else {
                       const customer = customers.find((c) => c.id === parseInt(value));
-                setSelectedCustomer(customer || null);
+                      setSelectedCustomer(customer || null);
                     }
                   }}
                 >
-                  <SelectTrigger className="w-[220px] h-8">
-                    <SelectValue placeholder="Consumidor Final" />
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um cliente (opcional)" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Consumidor Final</SelectItem>
-              {customers.map((customer) => (
+                    {customers.map((customer) => (
                       <SelectItem key={customer.id} value={customer.id.toString()}>
-                  {customer.name}
+                        {customer.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold w-16 text-right">DATA:</span>
-                <Input
-                  type="text"
-                  value={getCurrentDate()}
-                  readOnly
-                  className="w-[220px] h-8 bg-background"
-                />
+
+              {/* Tabela de Itens */}
+              <div className="flex-1 overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produto</TableHead>
+                      <TableHead>Qtd</TableHead>
+                      <TableHead>Preço</TableHead>
+                      <TableHead>Total</TableHead>
+                      <TableHead className="w-[100px]">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell>
+                          {row.product ? (
+                            <div>
+                              <p className="font-medium">{row.product.name}</p>
+                              {row.returnedBottle && (
+                                <Badge variant="secondary" className="text-xs mt-1">
+                                  com casco
+                                </Badge>
+                              )}
+                            </div>
+                          ) : (
+                            <Select
+                              value=""
+                              onValueChange={(value) => handleProductChange(row.id, value)}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Selecione..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {products.map((product) => (
+                                  <SelectItem
+                                    key={product.id}
+                                    value={product.id.toString()}
+                                  >
+                                    {product.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {editingCell?.rowId === row.id && editingCell.field === "quantity" ? (
+                            <Input
+                              ref={inputRef}
+                              type="number"
+                              min="1"
+                              defaultValue={row.quantity}
+                              onBlur={(e) =>
+                                handleCellEdit(row.id, "quantity", e.target.value)
+                              }
+                              onKeyDown={(e) =>
+                                handleKeyDown(e, row.id, "quantity")
+                              }
+                              className="w-20"
+                            />
+                          ) : (
+                            <div
+                              className="cursor-pointer hover:bg-accent p-1 rounded"
+                              onClick={() => setEditingCell({ rowId: row.id, field: "quantity" })}
+                            >
+                              {row.quantity}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {row.product && (
+                            <div>
+                              {editingCell?.rowId === row.id && editingCell.field === "price" ? (
+                                <Input
+                                  ref={inputRef}
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  defaultValue={row.customPrice || getItemPrice({
+                                    product: row.product,
+                                    quantity: row.quantity,
+                                    returnedBottle: row.returnedBottle,
+                                  })}
+                                  onBlur={(e) =>
+                                    handleCellEdit(row.id, "price", e.target.value)
+                                  }
+                                  onKeyDown={(e) =>
+                                    handleKeyDown(e, row.id, "price")
+                                  }
+                                  className="w-24"
+                                />
+                              ) : (
+                                <div
+                                  className="cursor-pointer hover:bg-accent p-1 rounded"
+                                  onClick={() => setEditingCell({ rowId: row.id, field: "price" })}
+                                >
+                                  R$ {(row.customPrice !== undefined
+                                    ? row.customPrice
+                                    : getItemPrice({
+                                        product: row.product,
+                                        quantity: row.quantity,
+                                        returnedBottle: row.returnedBottle,
+                                      })
+                                  ).toFixed(2)}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-semibold">
+                          {row.product ? `R$ ${calculateRowTotal(row).toFixed(2)}` : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            {row.product && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => duplicateRow(row.id)}
+                                title="Duplicar"
+                              >
+                                <Copy className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {rows.length > 1 && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeRow(row.id)}
+                                title="Remover"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {rows.length === 1 && !rows[0].product && (
+                  <Button
+                    variant="outline"
+                    className="w-full mt-2"
+                    onClick={addNewRow}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Adicionar Item
+                  </Button>
+                )}
               </div>
-            </div>
-          </div>
+
+              {/* Total e Botão de Finalizar */}
+              <div className="mt-4 pt-4 border-t space-y-2">
+                <div className="flex justify-between text-lg font-semibold">
+                  <span>Total:</span>
+                  <span>R$ {getTotalAmount().toFixed(2)}</span>
+                </div>
+                {lowStockProducts.length > 0 && (
+                  <div className="flex items-center gap-2 text-sm text-amber-600">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>Alguns produtos têm estoque baixo</span>
+                  </div>
+                )}
+                <Button
+                  className="w-full"
+                  size="lg"
+                  onClick={handleCheckout}
+                  disabled={rows.filter((r) => r.product).length === 0}
+                >
+                  <CheckCircle2 className="w-5 h-5 mr-2" />
+                  Finalizar Venda (Ctrl+Enter)
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Coluna Direita - Estatísticas e Últimas Vendas */}
+        <div className="flex flex-col gap-4 overflow-hidden">
+          {/* Estatísticas */}
+          {showStats && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Estatísticas</CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowStats(false)}
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Package className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm">Itens:</span>
+                  </div>
+                  <span className="font-semibold">{getTotalQuantity()}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm">Total:</span>
+                  </div>
+                  <span className="font-semibold">R$ {getTotalAmount().toFixed(2)}</span>
+                </div>
+                {getTotalQuantity() > 0 && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm">Média:</span>
+                    </div>
+                    <span className="font-semibold">R$ {getAveragePrice().toFixed(2)}</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {!showStats && (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setShowStats(true)}
+            >
+              <ChevronDown className="w-4 h-4 mr-2" />
+              Mostrar Estatísticas
+            </Button>
+          )}
+
+          {/* Últimas Vendas */}
+          <Card className="flex-1 overflow-hidden flex flex-col">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <History className="w-5 h-5" />
+                  <CardTitle>Últimas Vendas</CardTitle>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={loadRecentOrders}
+                  title="Atualizar"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </Button>
+              </div>
+              <CardDescription>
+                Histórico das 10 vendas mais recentes
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto p-0">
+              {loadingOrders ? (
+                <div className="flex items-center justify-center h-32">
+                  <p className="text-sm text-muted-foreground">Carregando...</p>
+                </div>
+              ) : recentOrders.length === 0 ? (
+                <div className="flex items-center justify-center h-32">
+                  <p className="text-sm text-muted-foreground">Nenhuma venda registrada</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[70px]">ID</TableHead>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead className="text-right w-[100px]">Total</TableHead>
+                        <TableHead className="w-[100px]">Data</TableHead>
+                        <TableHead className="w-[80px] text-center">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {recentOrders.map((order) => (
+                        <TableRow key={order.id} className="hover:bg-accent/50">
+                          <TableCell className="font-medium">#{order.id}</TableCell>
+                          <TableCell>
+                            {order.customer_name ? (
+                              <span className="text-sm">{order.customer_name}</span>
+                            ) : (
+                              <span className="text-muted-foreground text-sm italic">
+                                Consumidor Final
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className="font-semibold text-green-600">
+                              R$ {order.total.toFixed(2)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {new Date(order.created_at).toLocaleDateString("pt-BR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => handleViewOrder(order.id)}
+                                title="Ver detalhes"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => handleGenerateReceipt(order.id)}
+                                title="Gerar recibo"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
 
-      {/* Alerta de Estoque Baixo */}
-      {lowStockProducts.length > 0 && (
-        <div className="mb-4 p-3 bg-destructive/10 border border-destructive rounded-lg flex items-center gap-2">
-          <AlertTriangle className="w-5 h-5 text-destructive" />
-          <div className="flex-1">
-            <div className="font-semibold text-destructive">Atenção: Estoque Insuficiente</div>
-            <div className="text-sm text-muted-foreground">
-              {lowStockProducts.map((r) => 
-                `${r.product!.name} (solicitado: ${r.quantity}, disponível: ${r.product!.stock_full})`
-              ).join(", ")}
-            </div>
-          </div>
+      {/* Modal de Atalhos */}
+      {showShortcuts && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Atalhos de Teclado</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowShortcuts(false)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm">Ctrl/Cmd + K</span>
+                <span className="text-sm text-muted-foreground">Buscar produto</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm">Ctrl/Cmd + Enter</span>
+                <span className="text-sm text-muted-foreground">Finalizar venda</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm">F1</span>
+                <span className="text-sm text-muted-foreground">Mostrar atalhos</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm">Escape</span>
+                <span className="text-sm text-muted-foreground">Cancelar edição</span>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
-      {/* Tabela de Produtos */}
-      <div className="border-2 border-foreground bg-white rounded-sm">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr>
-              <th className="border border-foreground p-2 text-left font-semibold bg-muted">Produto</th>
-              <th className="border border-foreground p-2 text-left font-semibold w-32 bg-muted">Tipo/Peso</th>
-              <th className="border border-foreground p-2 text-center font-semibold w-20 bg-muted">Quant.</th>
-              <th className="border border-foreground p-2 text-right font-semibold w-28 bg-muted">Valor Unit.</th>
-              <th className="border border-foreground p-2 text-right font-semibold w-28 bg-muted">Valor Total</th>
-              <th className="border border-foreground p-2 text-center font-semibold w-16 bg-muted">Casco</th>
-              <th className="border border-foreground p-2 text-center font-semibold w-20 bg-muted">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => {
-              const isEditing = editingCell?.rowId === row.id;
-              const unitPrice = row.customPrice !== undefined
-                ? row.customPrice
-                : row.product
-                ? getItemPrice({
-                    product: row.product,
-                    quantity: row.quantity,
-                    returnedBottle: row.returnedBottle,
-                  })
-                : 0;
-              const total = calculateRowTotal(row);
-              const isOutOfStock = row.product ? row.product.stock_full <= 0 : false;
-              const isLowStock = row.product ? row.quantity > row.product.stock_full : false;
-
-              return (
-                <tr 
-                  key={row.id} 
-                  className={cn(
-                    "hover:bg-muted/20 transition-colors",
-                    isOutOfStock && "bg-destructive/10",
-                    isLowStock && "bg-yellow-50",
-                    !row.product && "bg-muted/10"
+      {/* Dialog de Detalhes da Venda */}
+      <Dialog open={showOrderModal} onOpenChange={setShowOrderModal}>
+        <DialogContent className="max-w-2xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>
+              Venda #{selectedOrder?.order.id}
+            </DialogTitle>
+            <DialogDescription>
+              Detalhes completos da venda
+            </DialogDescription>
+          </DialogHeader>
+          {selectedOrder && (
+            <div className="space-y-4 overflow-y-auto">
+              <div className="space-y-2">
+                <p>
+                  <span className="font-semibold">Cliente:</span>{" "}
+                  {selectedOrder.order.customer_name || (
+                    <span className="text-muted-foreground">Consumidor Final</span>
                   )}
-                >
-                  <td className="border border-foreground p-2">
-                    {row.product ? (
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{row.product.name}</span>
-                        {isOutOfStock && (
-                          <Badge variant="destructive" className="text-xs">Sem estoque</Badge>
-                        )}
-                        {isLowStock && !isOutOfStock && (
-                          <Badge variant="outline" className="text-xs border-yellow-500 text-yellow-700">
-                            Estoque baixo
-                          </Badge>
-                        )}
-                    </div>
-                    ) : (
-                      <Select
-                        value=""
-                        onValueChange={(value) => handleProductChange(row.id, value)}
-                      >
-                        <SelectTrigger className="h-8 border-0 shadow-none bg-transparent">
-                          <SelectValue placeholder="Selecione..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {products
-                            .filter((p) => productFilter === "all" || p.type === productFilter)
-                            .map((product) => (
-                            <SelectItem 
-                              key={product.id} 
-                              value={product.id.toString()}
-                              disabled={product.stock_full <= 0}
-                            >
-                              {product.name} {product.stock_full <= 0 && "(Sem estoque)"}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </td>
-                  <td className="border border-foreground p-2 text-sm text-muted-foreground">
-                    {row.product?.description || (row.product?.type === "gas" ? "13kg" : row.product?.type) || ""}
-                  </td>
-                  <td className="border border-foreground p-2 text-center">
-                    {isEditing && editingCell.field === "quantity" ? (
-                      <Input
-                        ref={inputRef}
-                        type="number"
-                        min="1"
-                        max={row.product?.stock_full}
-                        defaultValue={row.quantity}
-                        className="w-16 h-8 text-center border-foreground"
-                        onBlur={(e) => handleCellEdit(row.id, "quantity", e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, row.id, "quantity", row.quantity)}
-                      />
-                    ) : (
-                      <div
-                        className={cn(
-                          "cursor-pointer hover:bg-muted px-2 py-1 rounded min-w-[40px] inline-block text-center transition-colors",
-                          !row.product && "opacity-50 cursor-not-allowed"
-                        )}
-                        onClick={() => row.product && setEditingCell({ rowId: row.id, field: "quantity" })}
-                      >
-                        {row.quantity}
-                    </div>
-                    )}
-                  </td>
-                  <td className="border border-foreground p-2 text-right">
-                    {isEditing && editingCell.field === "price" ? (
-                      <Input
-                        ref={inputRef}
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        defaultValue={row.customPrice ?? unitPrice}
-                        className="w-24 h-8 text-right border-foreground"
-                        onBlur={(e) => handleCellEdit(row.id, "price", e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, row.id, "price", row.customPrice ?? unitPrice)}
-                      />
-                    ) : (
-                      <div
-                        className={cn(
-                          "cursor-pointer hover:bg-muted px-2 py-1 rounded min-w-[80px] inline-block text-right transition-colors",
-                          !row.product && "opacity-50 cursor-not-allowed"
-                        )}
-                        onClick={() => row.product && setEditingCell({ rowId: row.id, field: "price" })}
-                      >
-                        {row.customPrice !== undefined && (
-                          <Badge variant="outline" className="mr-1 text-xs">Custom</Badge>
-                        )}
-                        R$ {unitPrice.toFixed(2)}
-                  </div>
-                    )}
-                  </td>
-                  <td className="border border-foreground p-2 text-right font-semibold">
-                    R$ {total.toFixed(2)}
-                  </td>
-                  <td className="border border-foreground p-2 text-center">
-                    <input
-                      type="checkbox"
-                      checked={row.returnedBottle}
-                      onChange={(e) => handleCellEdit(row.id, "returnedBottle", e.target.checked)}
-                      disabled={!row.product}
-                      className="w-4 h-4 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Cliente trouxe casco"
-                    />
-                  </td>
-                  <td className="border border-foreground p-2 text-center">
-                    <div className="flex justify-center gap-1">
-                      {row.product && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => duplicateRow(row.id)}
-                          className="h-7 w-7"
-                          title="Duplicar linha"
-                        >
-                          <Copy className="w-3 h-3" />
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeRow(row.id)}
-                        className="h-7 w-7"
-                        disabled={rows.length === 1}
-                        title="Remover linha"
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
-                </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr className="bg-muted/50">
-              <td colSpan={2} className="border border-foreground p-2 font-semibold">
-                TOTAIS
-              </td>
-              <td className="border border-foreground p-2 text-center font-semibold">
-                {getTotalQuantity()}
-              </td>
-              <td className="border border-foreground p-2"></td>
-              <td className="border border-foreground p-2 text-right font-semibold text-lg">
-                R$ {getTotalAmount().toFixed(2)}
-              </td>
-              <td colSpan={2} className="border border-foreground p-2"></td>
-            </tr>
-          </tfoot>
-        </table>
-          </div>
-
-      {/* Rodapé e Ações */}
-      <div className="mt-4 space-y-3">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" onClick={addNewRow} size="sm">
-              <Plus className="w-4 h-4 mr-2" />
-              Adicionar Linha
-            </Button>
-            <Button variant="outline" onClick={clearAll} size="sm">
-              <RotateCcw className="w-4 h-4 mr-2" />
-              Limpar Tudo
-            </Button>
-            {orderSuccess && (
-              <div className="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded-lg animate-in fade-in">
-                <CheckCircle2 className="w-5 h-5" />
-                <span>Pedido finalizado! Total: R$ {lastOrderTotal?.toFixed(2)}</span>
+                </p>
+                <p>
+                  <span className="font-semibold">Data:</span>{" "}
+                  {new Date(selectedOrder.order.created_at).toLocaleString("pt-BR")}
+                </p>
               </div>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={handleCheckout}
-              size="lg" 
-              className="min-w-[150px]"
-              disabled={rows.filter((r) => r.product).length === 0 || lowStockProducts.length > 0}
-            >
-              Finalizar Venda
-            </Button>
-          </div>
-        </div>
-        <div className="text-center text-sm text-muted-foreground italic pt-2 border-t">
-          Deus é nossa fonte!
-        </div>
-        <div className="text-center text-xs text-muted-foreground pt-1">
-          ASSINATURA: ___________________________
-        </div>
-      </div>
+
+              <div>
+                <h3 className="font-semibold mb-2">Itens da Venda:</h3>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produto</TableHead>
+                      <TableHead>Qtd</TableHead>
+                      <TableHead>Preço Unit.</TableHead>
+                      <TableHead className="text-right">Subtotal</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedOrder.items.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          {item.product_name}{" "}
+                          {item.returned_bottle && (
+                            <Badge variant="secondary" className="ml-2">
+                              com casco
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>{item.quantity}</TableCell>
+                        <TableCell>R$ {item.unit_price.toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-semibold">
+                          R$ {(item.quantity * item.unit_price).toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="text-right border-t pt-4">
+                <p className="text-xl font-bold">
+                  Total: R$ {selectedOrder.order.total.toFixed(2)}
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowOrderModal(false)}
+                >
+                  Fechar
+                </Button>
+                <Button
+                  onClick={() => handleGenerateReceipt(selectedOrder.order.id)}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Gerar Recibo
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
