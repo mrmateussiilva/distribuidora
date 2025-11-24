@@ -6,13 +6,12 @@ import { ordersApi } from "../api/orders";
 import { receiptsApi } from "../api/receipts";
 import type { Customer, Product, OrderWithCustomer, OrderWithItems } from "../types";
 import {
-  CheckCircle2, Trash2, Plus, Search, Copy,
-  RotateCcw, TrendingUp, Package, DollarSign, AlertTriangle,
-  Filter, History, Eye, FileText, ShoppingCart
+  CheckCircle2, Trash2, Copy,
+  RotateCcw, AlertTriangle,
+  History, Eye, FileText, ShoppingCart, Search
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -59,8 +58,6 @@ export default function POS() {
   ]);
   const [editingCell, setEditingCell] = useState<{ rowId: number; field: string } | null>(null);
   const [nextRowId, setNextRowId] = useState(2);
-  const [productSearch, setProductSearch] = useState("");
-  const [productFilter, setProductFilter] = useState<string>("all");
   const [lastOrderTotal, setLastOrderTotal] = useState<number | null>(null);
   const [recentOrders, setRecentOrders] = useState<OrderWithCustomer[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -69,7 +66,6 @@ export default function POS() {
   const [showNewSaleModal, setShowNewSaleModal] = useState(false);
   const [orderSearch, setOrderSearch] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const productSearchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchProducts();
@@ -92,6 +88,13 @@ export default function POS() {
     } finally {
       setLoadingOrders(false);
     }
+  };
+
+  const getNextOrderId = () => {
+    if (recentOrders.length === 0) return 1;
+    // Encontra o maior ID entre todos os pedidos
+    const maxId = Math.max(...recentOrders.map(order => order.id));
+    return maxId + 1;
   };
 
   useEffect(() => {
@@ -117,7 +120,6 @@ export default function POS() {
     ]);
     setNextRowId(2);
     setSelectedCustomer(null);
-    setProductSearch("");
   }, []);
 
   const handleCheckout = useCallback(async () => {
@@ -177,14 +179,6 @@ export default function POS() {
   // Atalhos de teclado
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
-      // Ctrl/Cmd + K para buscar produto
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        if (showNewSaleModal) {
-          productSearchRef.current?.focus();
-        }
-        return;
-      }
       // Escape para cancelar edição
       if (e.key === "Escape") {
         setEditingCell(null);
@@ -249,23 +243,9 @@ export default function POS() {
     return rows.reduce((total, row) => total + (row.product ? row.quantity : 0), 0);
   };
 
-  const getAveragePrice = () => {
-    const validRows = rows.filter((r) => r.product);
-    if (validRows.length === 0) return 0;
-    return getTotalAmount() / getTotalQuantity();
-  };
-
   const getLowStockProducts = () => {
     return rows.filter((r) => r.product && r.product.stock_full < r.quantity);
   };
-
-  const filteredProducts = products.filter((p) => {
-    const matchesSearch = productSearch.trim() === "" ||
-      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      (p.description?.toLowerCase().includes(productSearch.toLowerCase()) ?? false);
-    const matchesFilter = productFilter === "all" || p.type === productFilter;
-    return matchesSearch && matchesFilter;
-  });
 
   const filteredOrders = recentOrders.filter((order) => {
     if (!orderSearch.trim()) return true;
@@ -280,8 +260,8 @@ export default function POS() {
   const handleProductChange = (rowId: number, productId: string) => {
     const product = products.find((p) => p.id === parseInt(productId));
     if (product) {
-      setRows((prev) =>
-        prev.map((row) =>
+      setRows((prev) => {
+        const updated = prev.map((row) =>
           row.id === rowId
             ? {
                 ...row,
@@ -291,33 +271,39 @@ export default function POS() {
                 quantity: row.quantity || 1,
               }
             : row
-        )
-      );
+        );
+        
+        // Verifica se há uma linha vazia após atualizar
+        const hasEmptyRow = updated.some((row) => !row.product);
+        
+        // Se não houver linha vazia, adiciona uma nova
+        if (!hasEmptyRow) {
+          // Calcula o próximo ID baseado no maior ID atual
+          const maxId = Math.max(...updated.map(r => r.id), 0);
+          const newRowId = maxId + 1;
+          
+          // Atualiza o nextRowId para o próximo valor disponível
+          setNextRowId(newRowId + 1);
+          
+          return [
+            ...updated,
+            {
+              id: newRowId,
+              product: null,
+              quantity: 1,
+              unitPrice: 0,
+              returnedBottle: false,
+            },
+          ];
+        }
+        
+        return updated;
+      });
+      
       setTimeout(() => {
         setEditingCell({ rowId, field: "quantity" });
       }, 100);
     }
-  };
-
-  const handleQuickAddProduct = (product: Product) => {
-    const emptyRow = rows.find((row) => !row.product);
-    if (emptyRow) {
-      handleProductChange(emptyRow.id, product.id.toString());
-    } else {
-      const newRow: ReceiptRow = {
-        id: nextRowId,
-        product,
-        quantity: 1,
-        unitPrice: product.price_full,
-        returnedBottle: false,
-      };
-      setRows((prev) => [...prev, newRow]);
-      setNextRowId((prev) => prev + 1);
-      setTimeout(() => {
-        setEditingCell({ rowId: newRow.id, field: "quantity" });
-      }, 100);
-    }
-    setProductSearch("");
   };
 
   const duplicateRow = (rowId: number) => {
@@ -596,17 +582,10 @@ export default function POS() {
 
       {/* Modal de Nova Venda */}
       <Dialog open={showNewSaleModal} onOpenChange={setShowNewSaleModal}>
-        <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Nova Venda</DialogTitle>
-            <DialogDescription>
-              Adicione produtos e finalize a venda
-            </DialogDescription>
-          </DialogHeader>
-
+        <DialogContent className="max-w-[95vw] w-full h-[95vh] overflow-hidden flex flex-col p-0">
           {/* Mensagem de sucesso */}
           {orderSuccess && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-2">
+            <div className="bg-green-50 border-b border-green-200 p-4 flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-green-600" />
               <div>
                 <p className="font-semibold text-green-900">Venda finalizada com sucesso!</p>
@@ -619,331 +598,243 @@ export default function POS() {
             </div>
           )}
 
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 overflow-hidden">
-            {/* Coluna Esquerda - Produtos e Carrinho */}
-            <div className="lg:col-span-2 flex flex-col gap-4 overflow-hidden">
-              {/* Busca de Produtos */}
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        ref={productSearchRef}
-                        placeholder="Buscar produto (Ctrl+K)..."
-                        value={productSearch}
-                        onChange={(e) => setProductSearch(e.target.value)}
-                        className="pl-9"
-                      />
-                    </div>
-                    <Select value={productFilter} onValueChange={setProductFilter}>
-                      <SelectTrigger className="w-[180px]">
-                        <Filter className="w-4 h-4 mr-2" />
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos</SelectItem>
-                        <SelectItem value="water">Água</SelectItem>
-                        <SelectItem value="gas">Gás</SelectItem>
-                        <SelectItem value="coal">Carvão</SelectItem>
-                        <SelectItem value="other">Outros</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Lista de Produtos */}
-              <Card className="flex-1 overflow-hidden flex flex-col">
-                <CardHeader>
-                  <CardTitle>Produtos</CardTitle>
-                </CardHeader>
-                <CardContent className="flex-1 overflow-y-auto">
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {filteredProducts.map((product) => (
-                      <Button
-                        key={product.id}
-                        variant="outline"
-                        className="h-auto flex flex-col items-start p-3 hover:bg-accent"
-                        onClick={() => handleQuickAddProduct(product)}
-                      >
-                        <div className="w-full">
-                          <p className="font-semibold text-left">{product.name}</p>
-                          <p className="text-xs text-muted-foreground text-left mt-1">
-                            {product.description}
-                          </p>
-                          <div className="flex items-center justify-between mt-2">
-                            <span className="text-sm font-bold">
-                              R$ {product.price_full.toFixed(2)}
-                            </span>
-                            <Badge variant={product.stock_full > 0 ? "default" : "destructive"}>
-                              Est: {product.stock_full}
-                            </Badge>
-                          </div>
-                        </div>
-                      </Button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Carrinho/Recibo */}
-              <Card className="flex-1 overflow-hidden flex flex-col">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>Recibo</CardTitle>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={clearAll}
-                        title="Limpar tudo"
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-1 overflow-y-auto flex flex-col">
-                  {/* Seleção de Cliente */}
-                  <div className="mb-4">
-                    <Label>Cliente</Label>
-                    <Select
-                      value={selectedCustomer?.id.toString() || "none"}
-                      onValueChange={(value) => {
-                        if (value === "none") {
-                          setSelectedCustomer(null);
-                        } else {
-                          const customer = customers.find((c) => c.id === parseInt(value));
-                          setSelectedCustomer(customer || null);
-                        }
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione um cliente (opcional)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Consumidor Final</SelectItem>
-                        {customers.map((customer) => (
-                          <SelectItem key={customer.id} value={customer.id.toString()}>
-                            {customer.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Tabela de Itens */}
-                  <div className="flex-1 overflow-y-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Produto</TableHead>
-                          <TableHead>Qtd</TableHead>
-                          <TableHead>Preço</TableHead>
-                          <TableHead>Total</TableHead>
-                          <TableHead className="w-[100px]">Ações</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {rows.map((row) => (
-                          <TableRow key={row.id}>
-                            <TableCell>
-                              {row.product ? (
-                                <div>
-                                  <p className="font-medium">{row.product.name}</p>
-                                  {row.returnedBottle && (
-                                    <Badge variant="secondary" className="text-xs mt-1">
-                                      com casco
-                                    </Badge>
-                                  )}
-                                </div>
-                              ) : (
-                                <Select
-                                  value=""
-                                  onValueChange={(value) => handleProductChange(row.id, value)}
-                                >
-                                  <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Selecione..." />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {products.map((product) => (
-                                      <SelectItem
-                                        key={product.id}
-                                        value={product.id.toString()}
-                                      >
-                                        {product.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {editingCell?.rowId === row.id && editingCell.field === "quantity" ? (
-                                <Input
-                                  ref={inputRef}
-                                  type="number"
-                                  min="1"
-                                  defaultValue={row.quantity}
-                                  onBlur={(e) =>
-                                    handleCellEdit(row.id, "quantity", e.target.value)
-                                  }
-                                  onKeyDown={(e) =>
-                                    handleKeyDown(e, row.id, "quantity")
-                                  }
-                                  className="w-20"
-                                />
-                              ) : (
-                                <div
-                                  className="cursor-pointer hover:bg-accent p-1 rounded"
-                                  onClick={() => setEditingCell({ rowId: row.id, field: "quantity" })}
-                                >
-                                  {row.quantity}
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {row.product && (
-                                <div>
-                                  {editingCell?.rowId === row.id && editingCell.field === "price" ? (
-                                    <Input
-                                      ref={inputRef}
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      defaultValue={row.customPrice || getItemPrice({
-                                        product: row.product,
-                                        quantity: row.quantity,
-                                        returnedBottle: row.returnedBottle,
-                                      })}
-                                      onBlur={(e) =>
-                                        handleCellEdit(row.id, "price", e.target.value)
-                                      }
-                                      onKeyDown={(e) =>
-                                        handleKeyDown(e, row.id, "price")
-                                      }
-                                      className="w-24"
-                                    />
-                                  ) : (
-                                    <div
-                                      className="cursor-pointer hover:bg-accent p-1 rounded"
-                                      onClick={() => setEditingCell({ rowId: row.id, field: "price" })}
-                                    >
-                                      R$ {(row.customPrice !== undefined
-                                        ? row.customPrice
-                                        : getItemPrice({
-                                            product: row.product,
-                                            quantity: row.quantity,
-                                            returnedBottle: row.returnedBottle,
-                                          })
-                                      ).toFixed(2)}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell className="font-semibold">
-                              {row.product ? `R$ ${calculateRowTotal(row).toFixed(2)}` : "-"}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-1">
-                                {row.product && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => duplicateRow(row.id)}
-                                    title="Duplicar"
-                                  >
-                                    <Copy className="w-4 h-4" />
-                                  </Button>
-                                )}
-                                {rows.length > 1 && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => removeRow(row.id)}
-                                    title="Remover"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                    {rows.length === 1 && !rows[0].product && (
-                      <Button
-                        variant="outline"
-                        className="w-full mt-2"
-                        onClick={addNewRow}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Adicionar Item
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Total e Botão de Finalizar */}
-                  <div className="mt-4 pt-4 border-t space-y-2">
-                    <div className="flex justify-between text-lg font-semibold">
-                      <span>Total:</span>
-                      <span>R$ {getTotalAmount().toFixed(2)}</span>
-                    </div>
-                    {lowStockProducts.length > 0 && (
-                      <div className="flex items-center gap-2 text-sm text-amber-600">
-                        <AlertTriangle className="w-4 h-4" />
-                        <span>Alguns produtos têm estoque baixo</span>
-                      </div>
-                    )}
-                    <Button
-                      className="w-full"
-                      size="lg"
-                      onClick={handleCheckout}
-                      disabled={rows.filter((r) => r.product).length === 0}
-                    >
-                      <CheckCircle2 className="w-5 h-5 mr-2" />
-                      Finalizar Venda (Ctrl+Enter)
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+          <div className="flex-1 flex flex-col overflow-hidden p-6">
+            {/* Cabeçalho simples com Nota, Cliente e Data */}
+            <div className="mb-4 pb-4 border-b">
+              <div className="mb-3">
+                <p className="font-bold text-base">
+                  Nota de controle N°.: {String(getNextOrderId()).padStart(4, '0')}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold">CLIENTE:</span>
+                  <Select
+                    value={selectedCustomer?.id.toString() || "none"}
+                    onValueChange={(value) => {
+                      if (value === "none") {
+                        setSelectedCustomer(null);
+                      } else {
+                        const customer = customers.find((c) => c.id === parseInt(value));
+                        setSelectedCustomer(customer || null);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-8 w-[250px]">
+                      <SelectValue placeholder="Consumidor Final" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Consumidor Final</SelectItem>
+                      {customers.map((customer) => (
+                        <SelectItem key={customer.id} value={customer.id.toString()}>
+                          {customer.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold">DATA:</span>
+                  <span>{new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                </div>
+              </div>
             </div>
 
-            {/* Coluna Direita - Estatísticas */}
-            <div className="flex flex-col gap-4 overflow-hidden">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Estatísticas</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Package className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm">Itens:</span>
-                    </div>
-                    <span className="font-semibold">{getTotalQuantity()}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <DollarSign className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm">Total:</span>
-                    </div>
-                    <span className="font-semibold">R$ {getTotalAmount().toFixed(2)}</span>
-                  </div>
-                  {getTotalQuantity() > 0 && (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-sm">Média:</span>
-                      </div>
-                      <span className="font-semibold">R$ {getAveragePrice().toFixed(2)}</span>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+            {/* Tabela de Itens */}
+            <Card className="flex-1 overflow-hidden flex flex-col">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">Itens da Venda</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearAll}
+                    title="Limpar tudo"
+                  >
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Limpar
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-y-auto p-0">
+                <div className="border-t">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="font-bold">Produto</TableHead>
+                        <TableHead className="font-bold text-center w-24">Quant.</TableHead>
+                        <TableHead className="font-bold text-right w-32">Valor Unit.</TableHead>
+                        <TableHead className="font-bold text-right w-32">Valor Total</TableHead>
+                        <TableHead className="w-20"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map((row, index) => (
+                        <TableRow key={row.id} className={index % 2 === 0 ? "bg-white" : "bg-muted/20"}>
+                          <TableCell>
+                            {row.product ? (
+                              <div>
+                                <p className="font-medium">{row.product.name}</p>
+                                {row.returnedBottle && (
+                                  <Badge variant="secondary" className="text-xs mt-1">
+                                    com casco
+                                  </Badge>
+                                )}
+                              </div>
+                            ) : (
+                              <Select
+                                value=""
+                                onValueChange={(value) => handleProductChange(row.id, value)}
+                              >
+                                <SelectTrigger className="w-full h-8">
+                                  <SelectValue placeholder="Selecione um produto..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {products.map((product) => (
+                                    <SelectItem
+                                      key={product.id}
+                                      value={product.id.toString()}
+                                    >
+                                      {product.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {editingCell?.rowId === row.id && editingCell.field === "quantity" ? (
+                              <Input
+                                ref={inputRef}
+                                type="number"
+                                min="1"
+                                defaultValue={row.quantity}
+                                onBlur={(e) =>
+                                  handleCellEdit(row.id, "quantity", e.target.value)
+                                }
+                                onKeyDown={(e) =>
+                                  handleKeyDown(e, row.id, "quantity")
+                                }
+                                className="w-20 h-8 text-center"
+                              />
+                            ) : (
+                              <div
+                                className="cursor-pointer hover:bg-accent p-1 rounded text-center"
+                                onClick={() => setEditingCell({ rowId: row.id, field: "quantity" })}
+                              >
+                                {row.quantity}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {row.product && (
+                              <div>
+                                {editingCell?.rowId === row.id && editingCell.field === "price" ? (
+                                  <Input
+                                    ref={inputRef}
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    defaultValue={row.customPrice || getItemPrice({
+                                      product: row.product,
+                                      quantity: row.quantity,
+                                      returnedBottle: row.returnedBottle,
+                                    })}
+                                    onBlur={(e) =>
+                                      handleCellEdit(row.id, "price", e.target.value)
+                                    }
+                                    onKeyDown={(e) =>
+                                      handleKeyDown(e, row.id, "price")
+                                    }
+                                    className="w-28 h-8 text-right"
+                                  />
+                                ) : (
+                                  <div
+                                    className="cursor-pointer hover:bg-accent p-1 rounded text-right"
+                                    onClick={() => setEditingCell({ rowId: row.id, field: "price" })}
+                                  >
+                                    R$ {(row.customPrice !== undefined
+                                      ? row.customPrice
+                                      : getItemPrice({
+                                          product: row.product,
+                                          quantity: row.quantity,
+                                          returnedBottle: row.returnedBottle,
+                                        })
+                                    ).toFixed(2)}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {row.product ? `R$ ${calculateRowTotal(row).toFixed(2)}` : "-"}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              {row.product && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => duplicateRow(row.id)}
+                                  title="Duplicar"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </Button>
+                              )}
+                              {rows.length > 1 && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => removeRow(row.id)}
+                                  title="Remover"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        ))}
+                      {/* Linha de totais */}
+                      {rows.some(r => r.product) && (
+                        <TableRow className="bg-muted/50 font-bold">
+                          <TableCell colSpan={2} className="font-bold">
+                            TOTAIS
+                          </TableCell>
+                          <TableCell className="text-center font-bold">
+                            {getTotalQuantity()}
+                          </TableCell>
+                          <TableCell></TableCell>
+                          <TableCell className="text-right font-bold">
+                            R$ {getTotalAmount().toFixed(2)}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Rodapé com botão de finalizar */}
+            <div className="mt-4 space-y-2">
+              {lowStockProducts.length > 0 && (
+                <div className="flex items-center gap-2 text-sm text-amber-600">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>Alguns produtos têm estoque baixo</span>
+                </div>
+              )}
+              <Button
+                className="w-full"
+                size="lg"
+                onClick={handleCheckout}
+                disabled={rows.filter((r) => r.product).length === 0}
+              >
+                <CheckCircle2 className="w-5 h-5 mr-2" />
+                Finalizar Venda (Ctrl+Enter)
+              </Button>
             </div>
           </div>
         </DialogContent>
