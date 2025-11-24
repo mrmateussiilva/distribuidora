@@ -37,6 +37,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface ReceiptRow {
   id: number;
@@ -68,6 +78,18 @@ export default function POS() {
   const [showNewSaleModal, setShowNewSaleModal] = useState(false);
   const [orderSearch, setOrderSearch] = useState("");
   const [editingOrderDate, setEditingOrderDate] = useState<{ orderId: number; date: string } | null>(null);
+  const [alertDialog, setAlertDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    type: "info" | "error" | "success" | "confirm";
+    onConfirm?: () => void;
+  }>({
+    open: false,
+    title: "",
+    message: "",
+    type: "info",
+  });
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -117,6 +139,25 @@ export default function POS() {
     return price * row.quantity;
   };
 
+  const showAlert = (title: string, message: string, type: "info" | "error" | "success" = "info") => {
+    setAlertDialog({
+      open: true,
+      title,
+      message,
+      type,
+    });
+  };
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setAlertDialog({
+      open: true,
+      title,
+      message,
+      type: "confirm",
+      onConfirm,
+    });
+  };
+
   const clearAll = useCallback(() => {
     setRows([
       { id: 1, product: null, quantity: 1, unitPrice: 0, returnedBottle: false },
@@ -129,7 +170,7 @@ export default function POS() {
     const validRows = rows.filter((row) => row.product !== null && row.quantity > 0);
 
     if (validRows.length === 0) {
-      alert("Adicione pelo menos um produto à venda");
+      showAlert("Atenção", "Adicione pelo menos um produto à venda", "error");
       return;
     }
 
@@ -139,7 +180,7 @@ export default function POS() {
     );
     if (lowStockRows.length > 0) {
       const productNames = lowStockRows.map((r) => r.product!.name).join(", ");
-      alert(`Estoque insuficiente para: ${productNames}`);
+      showAlert("Estoque Insuficiente", `Estoque insuficiente para: ${productNames}`, "error");
       return;
     }
 
@@ -175,9 +216,9 @@ export default function POS() {
       await loadRecentOrders();
       setShowNewSaleModal(false);
     } catch (error) {
-      alert("Erro ao finalizar pedido: " + error);
+      showAlert("Erro", "Erro ao finalizar pedido: " + error, "error");
     }
-  }, [rows, selectedCustomer, getItemPrice, clearAll, fetchProducts]);
+  }, [rows, selectedCustomer, getItemPrice, clearAll, fetchProducts, showAlert]);
 
   // Atalhos de teclado
   useEffect(() => {
@@ -228,7 +269,7 @@ export default function POS() {
             await loadRecentOrders();
             setShowNewSaleModal(false);
           } catch (error) {
-            alert("Erro ao finalizar pedido: " + error);
+            showAlert("Erro", "Erro ao finalizar pedido: " + error, "error");
           }
         }
       }
@@ -337,7 +378,7 @@ export default function POS() {
           const qty = Number(value) || 1;
           // Valida estoque
           if (row.product && qty > row.product.stock_full) {
-            alert(`Estoque insuficiente! Disponível: ${row.product.stock_full}`);
+            showAlert("Estoque Insuficiente", `Estoque insuficiente! Disponível: ${row.product.stock_full}`, "error");
             return { ...row, quantity: Math.min(qty, row.product.stock_full) };
           }
           return { ...row, quantity: qty };
@@ -427,7 +468,7 @@ export default function POS() {
       setSelectedOrder(order);
       setShowOrderModal(true);
     } catch (error) {
-      alert("Erro ao carregar detalhes da venda: " + error);
+      showAlert("Erro", "Erro ao carregar detalhes da venda: " + error, "error");
     }
   };
 
@@ -441,20 +482,24 @@ export default function POS() {
         newWindow.document.close();
       }
     } catch (error) {
-      alert("Erro ao gerar recibo: " + error);
+      showAlert("Erro", "Erro ao gerar recibo: " + error, "error");
     }
   };
 
   const handleDeleteOrder = async (orderId: number) => {
-    if (confirm("Tem certeza que deseja excluir esta venda? Esta ação não pode ser desfeita.")) {
-      try {
-        await ordersApi.delete(orderId);
-        await loadRecentOrders();
-        alert("Venda excluída com sucesso!");
-      } catch (error) {
-        alert("Erro ao excluir venda: " + error);
+    showConfirm(
+      "Confirmar Exclusão",
+      "Tem certeza que deseja excluir esta venda? Esta ação não pode ser desfeita.",
+      async () => {
+        try {
+          await ordersApi.delete(orderId);
+          await loadRecentOrders();
+          showAlert("Sucesso", "Venda excluída com sucesso!", "success");
+        } catch (error) {
+          showAlert("Erro", "Erro ao excluir venda: " + error, "error");
+        }
       }
-    }
+    );
   };
 
   const handleUpdateOrderDate = async (orderId: number, newDate: string) => {
@@ -473,9 +518,9 @@ export default function POS() {
       }
       
       setEditingOrderDate(null);
-      alert("Data da venda atualizada com sucesso!");
+      showAlert("Sucesso", "Data da venda atualizada com sucesso!", "success");
     } catch (error) {
-      alert("Erro ao atualizar data da venda: " + error);
+      showAlert("Erro", "Erro ao atualizar data da venda: " + error, "error");
     }
   };
 
@@ -1057,17 +1102,21 @@ export default function POS() {
                 {user?.role === 'admin' && (
                   <Button
                     variant="destructive"
-                    onClick={async () => {
-                      if (confirm("Tem certeza que deseja excluir esta venda? Esta ação não pode ser desfeita.")) {
-                        try {
-                          await ordersApi.delete(selectedOrder.order.id);
-                          setShowOrderModal(false);
-                          await loadRecentOrders();
-                          alert("Venda excluída com sucesso!");
-                        } catch (error) {
-                          alert("Erro ao excluir venda: " + error);
+                    onClick={() => {
+                      showConfirm(
+                        "Confirmar Exclusão",
+                        "Tem certeza que deseja excluir esta venda? Esta ação não pode ser desfeita.",
+                        async () => {
+                          try {
+                            await ordersApi.delete(selectedOrder.order.id);
+                            setShowOrderModal(false);
+                            await loadRecentOrders();
+                            showAlert("Sucesso", "Venda excluída com sucesso!", "success");
+                          } catch (error) {
+                            showAlert("Erro", "Erro ao excluir venda: " + error, "error");
+                          }
                         }
-                      }
+                      );
                     }}
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
@@ -1079,6 +1128,44 @@ export default function POS() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Alerta/Confirmação */}
+      <AlertDialog open={alertDialog.open} onOpenChange={(open: boolean) => setAlertDialog({ ...alertDialog, open })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              {alertDialog.type === "error" && <AlertTriangle className="w-5 h-5 text-destructive" />}
+              {alertDialog.type === "success" && <CheckCircle2 className="w-5 h-5 text-green-600" />}
+              {alertDialog.type === "info" && <AlertTriangle className="w-5 h-5 text-blue-600" />}
+              {alertDialog.title}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {alertDialog.message}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            {alertDialog.type === "confirm" ? (
+              <>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    if (alertDialog.onConfirm) {
+                      alertDialog.onConfirm();
+                    }
+                    setAlertDialog({ ...alertDialog, open: false });
+                  }}
+                >
+                  Confirmar
+                </AlertDialogAction>
+              </>
+            ) : (
+              <AlertDialogAction onClick={() => setAlertDialog({ ...alertDialog, open: false })}>
+                OK
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
