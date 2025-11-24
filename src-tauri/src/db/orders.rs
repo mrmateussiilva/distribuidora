@@ -1,5 +1,5 @@
 use crate::models::{
-    OrderWithCustomer, OrderItemPayload, CreateOrderPayload,
+    OrderWithCustomer, CreateOrderPayload,
     OrderWithItems, OrderItemWithProduct,
 };
 use crate::errors::AppError;
