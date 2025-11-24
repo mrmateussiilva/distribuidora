@@ -38,7 +38,13 @@ export default function Layout() {
   const navItems = allNavItems.filter(item => !item.adminOnly || user?.role === 'admin');
 
   const handleLogout = async () => {
-    await invoke("logout");
+    try {
+      await invoke("logout");
+    } catch (error) {
+      console.error("Erro ao fazer logout no backend:", error);
+    }
+    // Remove token do sessionStorage
+    sessionStorage.removeItem('auth-token');
     logoutFromStore();
     navigate("/login");
   };
