@@ -64,6 +64,8 @@ export default function Products() {
     price_full: 0,
     stock_full: 0,
     stock_empty: 0,
+    expiry_month: null,
+    expiry_year: null,
   });
 
   // Estados para movimentações
@@ -86,6 +88,23 @@ export default function Products() {
       loadMovements();
     }
   }, [fetchProducts, activeTab]);
+
+  // Resetar formulário quando abrir modal para novo produto
+  useEffect(() => {
+    if (showModal && !editingProduct) {
+      setFormData({
+        name: "",
+        description: "",
+        type: "water",
+        price_refill: 0,
+        price_full: 0,
+        stock_full: 0,
+        stock_empty: 0,
+        expiry_month: null,
+        expiry_year: null,
+      });
+    }
+  }, [showModal, editingProduct]);
 
   const loadMovements = useCallback(async () => {
     setLoadingMovements(true);
@@ -119,6 +138,8 @@ export default function Products() {
         price_full: 0,
         stock_full: 0,
         stock_empty: 0,
+        expiry_month: null,
+        expiry_year: null,
       });
     } catch (error) {
       alert("Erro ao salvar produto: " + error);
@@ -135,6 +156,8 @@ export default function Products() {
       price_full: product.price_full,
       stock_full: product.stock_full,
       stock_empty: product.stock_empty,
+      expiry_month: product.expiry_month,
+      expiry_year: product.expiry_year,
     });
     setShowModal(true);
   };
@@ -153,8 +176,8 @@ export default function Products() {
       await fetchProducts();
       setShowDeleteDialog(false);
       setProductToDelete(null);
-    } catch (error) {
-      alert("Erro ao excluir produto: " + error);
+      } catch (error) {
+        alert("Erro ao excluir produto: " + error);
     } finally {
       setDeleteLoading(false);
     }
@@ -231,24 +254,26 @@ export default function Products() {
           </p>
         </div>
         {activeTab === "products" && (
-          <Button
-            onClick={() => {
-              setEditingProduct(null);
-              setFormData({
-                name: "",
-                description: "",
-                type: "water",
-                price_refill: 0,
-                price_full: 0,
-                stock_full: 0,
-                stock_empty: 0,
-              });
-              setShowModal(true);
-            }}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Novo Produto
-          </Button>
+        <Button
+          onClick={() => {
+            setEditingProduct(null);
+            setFormData({
+              name: "",
+              description: "",
+              type: "water",
+              price_refill: 0,
+              price_full: 0,
+              stock_full: 0,
+              stock_empty: 0,
+              expiry_month: null,
+              expiry_year: null,
+            });
+            setShowModal(true);
+          }}
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Novo Produto
+        </Button>
         )}
         {activeTab === "movements" && (
           <Button onClick={() => setShowMovementModal(true)}>
@@ -295,12 +320,12 @@ export default function Products() {
       <div className="flex-1 overflow-hidden">
         {activeTab === "products" ? (
           <Card className="h-full flex flex-col">
-            <CardHeader>
-              <CardTitle>Lista de Produtos</CardTitle>
-              <CardDescription>
-                Todos os produtos cadastrados no sistema
-              </CardDescription>
-            </CardHeader>
+        <CardHeader>
+          <CardTitle>Lista de Produtos</CardTitle>
+          <CardDescription>
+            Todos os produtos cadastrados no sistema
+          </CardDescription>
+        </CardHeader>
             <CardContent className="flex-1 overflow-y-auto p-0">
               {products.length === 0 ? (
                 <div className="flex items-center justify-center h-32">
@@ -310,31 +335,32 @@ export default function Products() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Nome</TableHead>
-                        <TableHead>Tipo</TableHead>
-                        <TableHead>Preço (com casco)</TableHead>
-                        <TableHead>Preço (sem casco)</TableHead>
-                        <TableHead>Estoque Cheio</TableHead>
-                        <TableHead>Estoque Vazio</TableHead>
-                        <TableHead className="text-right">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {products.map((product) => (
-                        <TableRow key={product.id}>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nome</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Preço (com casco)</TableHead>
+                <TableHead>Preço (sem casco)</TableHead>
+                <TableHead>Estoque Cheio</TableHead>
+                <TableHead>Estoque Vazio</TableHead>
+                <TableHead>Vencimento</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {products.map((product) => (
+                <TableRow key={product.id}>
                           <TableCell className="font-medium">
                             {product.name}
                           </TableCell>
-                          <TableCell>
-                            <Badge variant={getTypeVariant(product.type)}>
-                              {getTypeLabel(product.type)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>R$ {product.price_refill.toFixed(2)}</TableCell>
-                          <TableCell>R$ {product.price_full.toFixed(2)}</TableCell>
+                  <TableCell>
+                    <Badge variant={getTypeVariant(product.type)}>
+                      {getTypeLabel(product.type)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>R$ {product.price_refill.toFixed(2)}</TableCell>
+                  <TableCell>R$ {product.price_full.toFixed(2)}</TableCell>
                           <TableCell>
                             <Badge
                               variant={
@@ -345,36 +371,45 @@ export default function Products() {
                                   : "default"
                               }
                             >
-                              {product.stock_full}
+                    {product.stock_full}
                             </Badge>
-                          </TableCell>
-                          <TableCell>{product.stock_empty}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleEdit(product)}
+                  </TableCell>
+                  <TableCell>{product.stock_empty}</TableCell>
+                  <TableCell>
+                    {product.type === "water" && product.expiry_month && product.expiry_year ? (
+                      <span className="text-sm">
+                        {String(product.expiry_month).padStart(2, "0")}/{product.expiry_year}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(product)}
                                 title="Editar produto"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
                               {user?.role === "admin" && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
+                        <Button
+                          variant="ghost"
+                          size="icon"
                                   onClick={() => handleDeleteClick(product)}
                                   title="Excluir produto"
-                                >
-                                  <Trash2 className="w-4 h-4 text-destructive" />
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
                 </div>
               )}
             </CardContent>
@@ -471,13 +506,33 @@ export default function Products() {
                   </Table>
                 </div>
               )}
-            </CardContent>
-          </Card>
+        </CardContent>
+      </Card>
         )}
       </div>
 
       {/* Dialog de Produto */}
-      <Dialog open={showModal} onOpenChange={setShowModal}>
+      <Dialog 
+        open={showModal} 
+        onOpenChange={(open) => {
+          setShowModal(open);
+          if (!open) {
+            // Resetar formulário quando fechar
+            setEditingProduct(null);
+            setFormData({
+              name: "",
+              description: "",
+              type: "water",
+              price_refill: 0,
+              price_full: 0,
+              stock_full: 0,
+              stock_empty: 0,
+              expiry_month: null,
+              expiry_year: null,
+            });
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>
@@ -542,11 +597,11 @@ export default function Products() {
                   type="number"
                   step="0.01"
                   required
-                  value={formData.price_refill}
+                  value={formData.price_refill || ""}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      price_refill: parseFloat(e.target.value),
+                      price_refill: parseFloat(e.target.value) || 0,
                     })
                   }
                 />
@@ -558,11 +613,11 @@ export default function Products() {
                   type="number"
                   step="0.01"
                   required
-                  value={formData.price_full}
+                  value={formData.price_full || ""}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      price_full: parseFloat(e.target.value),
+                      price_full: parseFloat(e.target.value) || 0,
                     })
                   }
                 />
@@ -574,7 +629,7 @@ export default function Products() {
                 <Input
                   id="stock_full"
                   type="number"
-                  value={formData.stock_full}
+                  value={formData.stock_full || ""}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
@@ -588,7 +643,7 @@ export default function Products() {
                 <Input
                   id="stock_empty"
                   type="number"
-                  value={formData.stock_empty}
+                  value={formData.stock_empty || ""}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
@@ -598,6 +653,50 @@ export default function Products() {
                 />
               </div>
             </div>
+            {formData.type === "water" && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="expiry_month">Mês de Vencimento</Label>
+                  <Select
+                    value={formData.expiry_month?.toString() || undefined}
+                    onValueChange={(value) =>
+                      setFormData({
+                        ...formData,
+                        expiry_month: value ? parseInt(value) : null,
+                      })
+                    }
+                  >
+                    <SelectTrigger id="expiry_month">
+                      <SelectValue placeholder="Selecione o mês" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                        <SelectItem key={month} value={month.toString()}>
+                          {String(month).padStart(2, "0")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="expiry_year">Ano de Vencimento</Label>
+                  <Input
+                    id="expiry_year"
+                    type="number"
+                    min={new Date().getFullYear()}
+                    max={new Date().getFullYear() + 10}
+                    value={formData.expiry_year || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        expiry_year: e.target.value ? parseInt(e.target.value) : null,
+                      })
+                    }
+                    placeholder="Ex: 2024"
+                  />
+                </div>
+              </div>
+            )}
             <DialogFooter>
               <Button
                 type="button"

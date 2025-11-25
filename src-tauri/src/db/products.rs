@@ -42,8 +42,8 @@ pub async fn create_product(
     }
 
     let id = sqlx::query(
-        "INSERT INTO products (name, description, type, price_refill, price_full, stock_full, stock_empty)
-         VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO products (name, description, type, price_refill, price_full, stock_full, stock_empty, expiry_month, expiry_year)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&payload.name)
     .bind(&payload.description)
@@ -52,6 +52,8 @@ pub async fn create_product(
     .bind(payload.price_full)
     .bind(payload.stock_full.unwrap_or(0))
     .bind(payload.stock_empty.unwrap_or(0))
+    .bind(&payload.expiry_month)
+    .bind(&payload.expiry_year)
     .execute(pool)
     .await?
     .last_insert_rowid();
@@ -156,6 +158,24 @@ pub async fn update_product(
         }
         query_builder.push("stock_empty = ");
         query_builder.push_bind(stock_empty);
+        has_updates = true;
+    }
+
+    if payload.expiry_month.is_some() {
+        if has_updates {
+            query_builder.push(", ");
+        }
+        query_builder.push("expiry_month = ");
+        query_builder.push_bind(&payload.expiry_month);
+        has_updates = true;
+    }
+
+    if payload.expiry_year.is_some() {
+        if has_updates {
+            query_builder.push(", ");
+        }
+        query_builder.push("expiry_year = ");
+        query_builder.push_bind(&payload.expiry_year);
         has_updates = true;
     }
 

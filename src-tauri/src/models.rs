@@ -11,6 +11,8 @@ pub struct Product {
     pub price_full: f64,
     pub stock_full: i64,
     pub stock_empty: i64,
+    pub expiry_month: Option<i64>,
+    pub expiry_year: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -22,6 +24,8 @@ pub struct CreateProductPayload {
     pub price_full: f64,
     pub stock_full: Option<i64>,
     pub stock_empty: Option<i64>,
+    pub expiry_month: Option<i64>,
+    pub expiry_year: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -33,6 +37,8 @@ pub struct UpdateProductPayload {
     pub price_full: Option<f64>,
     pub stock_full: Option<i64>,
     pub stock_empty: Option<i64>,
+    pub expiry_month: Option<i64>,
+    pub expiry_year: Option<i64>,
 }
 
 // ========== CUSTOMERS ==========

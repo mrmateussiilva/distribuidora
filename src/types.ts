@@ -8,6 +8,8 @@ export interface Product {
   price_full: number;
   stock_full: number;
   stock_empty: number;
+  expiry_month: number | null;
+  expiry_year: number | null;
 }
 
 export interface CreateProductPayload {
@@ -18,6 +20,8 @@ export interface CreateProductPayload {
   price_full: number;
   stock_full?: number;
   stock_empty?: number;
+  expiry_month?: number | null;
+  expiry_year?: number | null;
 }
 
 export interface UpdateProductPayload {
@@ -28,6 +32,8 @@ export interface UpdateProductPayload {
   price_full?: number;
   stock_full?: number;
   stock_empty?: number;
+  expiry_month?: number | null;
+  expiry_year?: number | null;
 }
 
 // ========== CUSTOMERS ==========
