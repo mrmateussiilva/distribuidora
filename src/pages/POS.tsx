@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useProductsStore } from "../state/productsStore";
 import { useCustomersStore } from "../state/customersStore";
 import { useCartStore } from "../state/cartStore";
@@ -58,10 +58,12 @@ interface ReceiptRow {
 }
 
 export default function POS() {
-  const { products, fetchProducts } = useProductsStore();
-  const { customers, fetchCustomers } = useCustomersStore();
-  const { getItemPrice } = useCartStore();
-  const { user } = useAuthStore();
+  const products = useProductsStore((state) => state.products);
+  const fetchProducts = useProductsStore((state) => state.fetchProducts);
+  const customers = useCustomersStore((state) => state.customers);
+  const fetchCustomers = useCustomersStore((state) => state.fetchCustomers);
+  const getItemPrice = useCartStore((state) => state.getItemPrice);
+  const user = useAuthStore((state) => state.user);
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [orderSuccess, setOrderSuccess] = useState(false);
@@ -92,13 +94,7 @@ export default function POS() {
   });
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetchProducts();
-    fetchCustomers();
-    loadRecentOrders();
-  }, [fetchProducts, fetchCustomers]);
-
-  const loadRecentOrders = async () => {
+  const loadRecentOrders = useCallback(async () => {
     setLoadingOrders(true);
     try {
       const orders = await ordersApi.getAll();
@@ -113,14 +109,20 @@ export default function POS() {
     } finally {
       setLoadingOrders(false);
     }
-  };
+  }, []);
 
-  const getNextOrderId = () => {
+  useEffect(() => {
+    fetchProducts();
+    fetchCustomers();
+    loadRecentOrders();
+  }, [fetchProducts, fetchCustomers, loadRecentOrders]);
+
+  const nextOrderId = useMemo(() => {
     if (recentOrders.length === 0) return 1;
     // Encontra o maior ID entre todos os pedidos
     const maxId = Math.max(...recentOrders.map(order => order.id));
     return maxId + 1;
-  };
+  }, [recentOrders]);
 
   useEffect(() => {
     if (editingCell && inputRef.current) {
@@ -129,7 +131,7 @@ export default function POS() {
     }
   }, [editingCell]);
 
-  const calculateRowTotal = (row: ReceiptRow) => {
+  const calculateRowTotal = useCallback((row: ReceiptRow) => {
     if (!row.product) return 0;
     const price = row.customPrice !== undefined ? row.customPrice : getItemPrice({
       product: row.product,
@@ -137,18 +139,18 @@ export default function POS() {
       returnedBottle: row.returnedBottle,
     });
     return price * row.quantity;
-  };
+  }, [getItemPrice]);
 
-  const showAlert = (title: string, message: string, type: "info" | "error" | "success" = "info") => {
+  const showAlert = useCallback((title: string, message: string, type: "info" | "error" | "success" = "info") => {
     setAlertDialog({
       open: true,
       title,
       message,
       type,
     });
-  };
+  }, []);
 
-  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+  const showConfirm = useCallback((title: string, message: string, onConfirm: () => void) => {
     setAlertDialog({
       open: true,
       title,
@@ -156,7 +158,7 @@ export default function POS() {
       type: "confirm",
       onConfirm,
     });
-  };
+  }, []);
 
   const clearAll = useCallback(() => {
     setRows([
@@ -165,6 +167,28 @@ export default function POS() {
     setNextRowId(2);
     setSelectedCustomer(null);
   }, []);
+
+  const totalAmount = useMemo(() => {
+    return rows.reduce((total, row) => total + calculateRowTotal(row), 0);
+  }, [rows, calculateRowTotal]);
+
+  const totalQuantity = useMemo(() => {
+    return rows.reduce((total, row) => total + (row.product ? row.quantity : 0), 0);
+  }, [rows]);
+
+  const lowStockProducts = useMemo(() => {
+    return rows.filter((r) => r.product && r.product.stock_full < r.quantity);
+  }, [rows]);
+
+  const filteredOrders = useMemo(() => {
+    if (!orderSearch.trim()) return recentOrders;
+    const searchLower = orderSearch.toLowerCase();
+    return recentOrders.filter((order) => (
+      order.id.toString().includes(searchLower) ||
+      (order.customer_name?.toLowerCase().includes(searchLower) ?? false) ||
+      order.total.toString().includes(searchLower)
+    ));
+  }, [recentOrders, orderSearch]);
 
   const handleCheckout = useCallback(async () => {
     const validRows = rows.filter((row) => row.product !== null && row.quantity > 0);
@@ -207,8 +231,7 @@ export default function POS() {
         items: orderItems,
       });
 
-      const total = rows.reduce((total, row) => total + calculateRowTotal(row), 0);
-      setLastOrderTotal(total);
+      setLastOrderTotal(totalAmount);
       clearAll();
       setOrderSuccess(true);
       setTimeout(() => setOrderSuccess(false), 3000);
@@ -218,11 +241,11 @@ export default function POS() {
     } catch (error) {
       showAlert("Erro", "Erro ao finalizar pedido: " + error, "error");
     }
-  }, [rows, selectedCustomer, getItemPrice, clearAll, fetchProducts, showAlert]);
+  }, [rows, selectedCustomer, getItemPrice, clearAll, fetchProducts, showAlert, totalAmount]);
 
   // Atalhos de teclado
   useEffect(() => {
-    const handleKeyDown = async (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       // Escape para cancelar edição
       if (e.key === "Escape") {
         setEditingCell(null);
@@ -231,77 +254,21 @@ export default function POS() {
       // Ctrl+Enter para finalizar venda
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && showNewSaleModal) {
         e.preventDefault();
-        const currentRows = rows;
-        const validRows = currentRows.filter((r) => r.product && r.quantity > 0);
+        const validRows = rows.filter((r) => r.product && r.quantity > 0);
         const lowStockRows = validRows.filter((r) =>
           r.product && r.quantity > r.product.stock_full
         );
         if (validRows.length > 0 && lowStockRows.length === 0) {
-          try {
-            const orderItems = validRows.map((row) => {
-              const price = row.customPrice !== undefined
-                ? row.customPrice
-                : getItemPrice({
-                    product: row.product!,
-                    quantity: row.quantity,
-                    returnedBottle: row.returnedBottle,
-                  });
-
-              return {
-                product_id: row.product!.id,
-                quantity: row.quantity,
-                returned_bottle: row.returnedBottle,
-                unit_price: price,
-              };
-            });
-
-            await ordersApi.create({
-              customer_id: selectedCustomer?.id || null,
-              items: orderItems,
-            });
-
-            const total = currentRows.reduce((total, row) => total + calculateRowTotal(row), 0);
-            setLastOrderTotal(total);
-            clearAll();
-            setOrderSuccess(true);
-            setTimeout(() => setOrderSuccess(false), 3000);
-            await fetchProducts();
-            await loadRecentOrders();
-            setShowNewSaleModal(false);
-          } catch (error) {
-            showAlert("Erro", "Erro ao finalizar pedido: " + error, "error");
-          }
+          handleCheckout();
         }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [rows, selectedCustomer, getItemPrice, clearAll, fetchProducts, showNewSaleModal]);
+  }, [rows, showNewSaleModal, handleCheckout]);
 
-  const getTotalAmount = () => {
-    return rows.reduce((total, row) => total + calculateRowTotal(row), 0);
-  };
-
-  const getTotalQuantity = () => {
-    return rows.reduce((total, row) => total + (row.product ? row.quantity : 0), 0);
-  };
-
-  const getLowStockProducts = () => {
-    return rows.filter((r) => r.product && r.product.stock_full < r.quantity);
-  };
-
-  const filteredOrders = recentOrders.filter((order) => {
-    if (!orderSearch.trim()) return true;
-    const searchLower = orderSearch.toLowerCase();
-    return (
-      order.id.toString().includes(searchLower) ||
-      (order.customer_name?.toLowerCase().includes(searchLower) ?? false) ||
-      order.total.toString().includes(searchLower)
-    );
-  });
-
-  const handleProductChange = (rowId: number, productId: string) => {
+  const handleProductChange = useCallback((rowId: number, productId: string) => {
     const product = products.find((p) => p.id === parseInt(productId));
     if (product) {
       setRows((prev) => {
@@ -348,9 +315,9 @@ export default function POS() {
         setEditingCell({ rowId, field: "quantity" });
       }, 100);
     }
-  };
+  }, [products, nextRowId]);
 
-  const duplicateRow = (rowId: number) => {
+  const duplicateRow = useCallback((rowId: number) => {
     const row = rows.find((r) => r.id === rowId);
     if (row && row.product) {
       const newRow: ReceiptRow = {
@@ -367,9 +334,9 @@ export default function POS() {
       });
       setNextRowId((prev) => prev + 1);
     }
-  };
+  }, [rows, nextRowId]);
 
-  const handleCellEdit = (rowId: number, field: string, value: string | number | boolean) => {
+  const handleCellEdit = useCallback((rowId: number, field: string, value: string | number | boolean) => {
     setRows((prev) =>
       prev.map((row) => {
         if (row.id !== rowId) return row;
@@ -392,9 +359,9 @@ export default function POS() {
       })
     );
     setEditingCell(null);
-  };
+  }, [rows, showAlert]);
 
-  const handleKeyDown = (
+  const handleKeyDown = useCallback((
     e: React.KeyboardEvent,
     rowId: number,
     field: string
@@ -440,9 +407,9 @@ export default function POS() {
         setEditingCell({ rowId: rows[currentIndex - 1].id, field: "quantity" });
       }
     }
-  };
+  }, [rows, handleCellEdit]);
 
-  const addNewRow = () => {
+  const addNewRow = useCallback(() => {
     setRows((prev) => [
       ...prev,
       {
@@ -454,15 +421,15 @@ export default function POS() {
       },
     ]);
     setNextRowId((prev) => prev + 1);
-  };
+  }, [nextRowId]);
 
-  const removeRow = (rowId: number) => {
+  const removeRow = useCallback((rowId: number) => {
     if (rows.length > 1) {
       setRows((prev) => prev.filter((row) => row.id !== rowId));
     }
-  };
+  }, [rows]);
 
-  const handleViewOrder = async (orderId: number) => {
+  const handleViewOrder = useCallback(async (orderId: number) => {
     try {
       const order = await ordersApi.getById(orderId);
       setSelectedOrder(order);
@@ -470,9 +437,9 @@ export default function POS() {
     } catch (error) {
       showAlert("Erro", "Erro ao carregar detalhes da venda: " + error, "error");
     }
-  };
+  }, [showAlert]);
 
-  const handleGenerateReceipt = async (orderId: number) => {
+  const handleGenerateReceipt = useCallback(async (orderId: number) => {
     try {
       const html = await receiptsApi.generate(orderId);
       // Abre em nova janela para impressão
@@ -484,9 +451,9 @@ export default function POS() {
     } catch (error) {
       showAlert("Erro", "Erro ao gerar recibo: " + error, "error");
     }
-  };
+  }, [showAlert]);
 
-  const handleDeleteOrder = async (orderId: number) => {
+  const handleDeleteOrder = useCallback(async (orderId: number) => {
     showConfirm(
       "Confirmar Exclusão",
       "Tem certeza que deseja excluir esta venda? Esta ação não pode ser desfeita.",
@@ -500,9 +467,9 @@ export default function POS() {
         }
       }
     );
-  };
+  }, [loadRecentOrders, showAlert, showConfirm]);
 
-  const handleUpdateOrderDate = async (orderId: number, newDate: string) => {
+  const handleUpdateOrderDate = useCallback(async (orderId: number, newDate: string) => {
     try {
       // Converte a data para o formato ISO
       const dateObj = new Date(newDate);
@@ -522,14 +489,21 @@ export default function POS() {
     } catch (error) {
       showAlert("Erro", "Erro ao atualizar data da venda: " + error, "error");
     }
-  };
+  }, [loadRecentOrders, showAlert, selectedOrder]);
 
-  const handleNewSale = () => {
+  const handleNewSale = useCallback(() => {
     clearAll();
     setShowNewSaleModal(true);
-  };
+  }, [clearAll]);
 
-  const lowStockProducts = getLowStockProducts();
+  const handleCustomerChange = useCallback((value: string) => {
+    if (value === "none") {
+      setSelectedCustomer(null);
+    } else {
+      const customer = customers.find((c) => c.id === parseInt(value));
+      setSelectedCustomer(customer || null);
+    }
+  }, [customers]);
 
   return (
     <div className="h-full flex flex-col gap-4 p-6">
@@ -734,7 +708,7 @@ export default function POS() {
             <div className="mb-4 pb-4 border-b">
               <div className="mb-3">
                 <p className="font-bold text-base">
-                  Nota de controle N°.: {String(getNextOrderId()).padStart(4, '0')}
+                  Nota de controle N°.: {String(nextOrderId).padStart(4, '0')}
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
@@ -742,14 +716,7 @@ export default function POS() {
                   <span className="font-bold">CLIENTE:</span>
                   <Select
                     value={selectedCustomer?.id.toString() || "none"}
-                    onValueChange={(value) => {
-                      if (value === "none") {
-                        setSelectedCustomer(null);
-                      } else {
-                        const customer = customers.find((c) => c.id === parseInt(value));
-                        setSelectedCustomer(customer || null);
-                      }
-                    }}
+                    onValueChange={handleCustomerChange}
                   >
                     <SelectTrigger className="h-8 w-[250px]">
                       <SelectValue placeholder="Consumidor Final" />
@@ -935,11 +902,11 @@ export default function POS() {
                             TOTAIS
                           </TableCell>
                           <TableCell className="text-center font-bold">
-                            {getTotalQuantity()}
+                            {totalQuantity}
                           </TableCell>
                           <TableCell></TableCell>
                           <TableCell className="text-right font-bold">
-                            R$ {getTotalAmount().toFixed(2)}
+                            R$ {totalAmount.toFixed(2)}
                           </TableCell>
                         </TableRow>
                       )}
