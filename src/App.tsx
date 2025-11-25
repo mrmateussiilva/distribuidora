@@ -4,7 +4,6 @@ import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
 import Customers from "./pages/Customers";
 import POS from "./pages/POS";
-import Stock from "./pages/Stock";
 import Orders from "./pages/Orders";
 import Settings from "./pages/Settings";
 import Users from "./pages/Users";
@@ -27,7 +26,6 @@ function App() {
             <Route path="/products" element={<Products />} />
             <Route path="/customers" element={<Customers />} />
             <Route path="/pos" element={<POS />} />
-            <Route path="/stock" element={<Stock />} />
             <Route path="/orders" element={<Orders />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/users" element={<Users />} />

@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useProductsStore } from "../state/productsStore";
 import { useAuthStore } from "@/state/authStore";
 import { productsApi } from "../api/products";
-import type { Product, CreateProductPayload } from "../types";
-import { Plus, Edit, Trash2 } from "lucide-react";
+import { stockApi } from "../api/stock";
+import type { Product, CreateProductPayload, StockMovementWithProduct } from "../types";
+import { Plus, Edit, Trash2, Package, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,6 +14,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -34,10 +45,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+type TabType = "products" | "movements";
+
 export default function Products() {
-  const { products, loading, fetchProducts, removeProduct } =
-    useProductsStore();
-  const { user } = useAuthStore();
+  const products = useProductsStore((state) => state.products);
+  const loading = useProductsStore((state) => state.loading);
+  const fetchProducts = useProductsStore((state) => state.fetchProducts);
+  const user = useAuthStore((state) => state.user);
+  
+  const [activeTab, setActiveTab] = useState<TabType>("products");
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState<CreateProductPayload>({
@@ -50,9 +66,38 @@ export default function Products() {
     stock_empty: 0,
   });
 
+  // Estados para movimentações
+  const [movements, setMovements] = useState<StockMovementWithProduct[]>([]);
+  const [loadingMovements, setLoadingMovements] = useState(false);
+  const [showMovementModal, setShowMovementModal] = useState(false);
+  const [movementType, setMovementType] = useState<"IN" | "OUT" | "ADJUST">("IN");
+  const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
+  const [quantity, setQuantity] = useState<number>(0);
+  const [movementLoading, setMovementLoading] = useState(false);
+
+  // Estados para exclusão
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   useEffect(() => {
     fetchProducts();
-  }, [fetchProducts]);
+    if (activeTab === "movements") {
+      loadMovements();
+    }
+  }, [fetchProducts, activeTab]);
+
+  const loadMovements = useCallback(async () => {
+    setLoadingMovements(true);
+    try {
+      const data = await stockApi.getMovements();
+      setMovements(data);
+    } catch (error) {
+      console.error("Erro ao carregar movimentações:", error);
+    } finally {
+      setLoadingMovements(false);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,24 +139,63 @@ export default function Products() {
     setShowModal(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (confirm("Tem certeza que deseja excluir este produto?")) {
-      try {
-        await productsApi.delete(id);
-        removeProduct(id);
-      } catch (error) {
-        alert("Erro ao excluir produto: " + error);
-      }
-    }
-  };
+  const handleDeleteClick = useCallback((product: Product) => {
+    setProductToDelete(product);
+    setShowDeleteDialog(true);
+  }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-xl text-muted-foreground">Carregando...</div>
-      </div>
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!productToDelete) return;
+
+    setDeleteLoading(true);
+    try {
+      await productsApi.delete(productToDelete.id);
+      await fetchProducts();
+      setShowDeleteDialog(false);
+      setProductToDelete(null);
+    } catch (error) {
+      alert("Erro ao excluir produto: " + error);
+    } finally {
+      setDeleteLoading(false);
+    }
+  }, [productToDelete, fetchProducts]);
+
+  const handleMovement = useCallback(async () => {
+    if (!selectedProduct || quantity <= 0) {
+      alert("Selecione um produto e informe a quantidade");
+      return;
+    }
+
+    setMovementLoading(true);
+    try {
+      switch (movementType) {
+        case "IN":
+          await stockApi.stockIn(selectedProduct, quantity);
+          break;
+        case "OUT":
+          await stockApi.stockOut(selectedProduct, quantity);
+          break;
+        case "ADJUST":
+          await stockApi.stockAdjust(selectedProduct, quantity);
+          break;
+      }
+      await fetchProducts();
+      await loadMovements();
+      setShowMovementModal(false);
+      setSelectedProduct(null);
+      setQuantity(0);
+    } catch (error) {
+      alert("Erro ao realizar movimentação: " + error);
+    } finally {
+      setMovementLoading(false);
+    }
+  }, [selectedProduct, quantity, movementType, fetchProducts, loadMovements]);
+
+  const sortedMovements = useMemo(() => {
+    return [...movements].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-  }
+  }, [movements]);
 
   const getTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
@@ -129,98 +213,270 @@ export default function Products() {
     return "secondary";
   };
 
+  if (loading && activeTab === "products") {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-xl text-muted-foreground">Carregando...</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="h-full flex flex-col gap-4 p-6">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Produtos</h1>
           <p className="text-muted-foreground">
-            Gerencie seus produtos e estoque
+            Gerencie seus produtos, estoque e movimentações
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setEditingProduct(null);
-            setFormData({
-              name: "",
-              description: "",
-              type: "water",
-              price_refill: 0,
-              price_full: 0,
-              stock_full: 0,
-              stock_empty: 0,
-            });
-            setShowModal(true);
-          }}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Novo Produto
-        </Button>
+        {activeTab === "products" && (
+          <Button
+            onClick={() => {
+              setEditingProduct(null);
+              setFormData({
+                name: "",
+                description: "",
+                type: "water",
+                price_refill: 0,
+                price_full: 0,
+                stock_full: 0,
+                stock_empty: 0,
+              });
+              setShowModal(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Novo Produto
+          </Button>
+        )}
+        {activeTab === "movements" && (
+          <Button onClick={() => setShowMovementModal(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Nova Movimentação
+          </Button>
+        )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Lista de Produtos</CardTitle>
-          <CardDescription>
-            Todos os produtos cadastrados no sistema
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Preço (com casco)</TableHead>
-                <TableHead>Preço (sem casco)</TableHead>
-                <TableHead>Estoque Cheio</TableHead>
-                <TableHead>Estoque Vazio</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {products.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell className="font-medium">{product.name}</TableCell>
-                  <TableCell>
-                    <Badge variant={getTypeVariant(product.type)}>
-                      {getTypeLabel(product.type)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>R$ {product.price_refill.toFixed(2)}</TableCell>
-                  <TableCell>R$ {product.price_full.toFixed(2)}</TableCell>
-                  <TableCell className="font-semibold">
-                    {product.stock_full}
-                  </TableCell>
-                  <TableCell>{product.stock_empty}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEdit(product)}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      {user?.role === 'admin' && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(product.id)}
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      {/* Tabs */}
+      <div className="flex gap-2 border-b">
+        <button
+          onClick={() => setActiveTab("products")}
+          className={`px-4 py-2 font-medium transition-colors ${
+            activeTab === "products"
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Package className="w-4 h-4" />
+            Produtos
+          </div>
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab("movements");
+            loadMovements();
+          }}
+          className={`px-4 py-2 font-medium transition-colors ${
+            activeTab === "movements"
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4" />
+            Movimentações
+          </div>
+        </button>
+      </div>
 
-      {/* Dialog */}
+      {/* Conteúdo das Tabs */}
+      <div className="flex-1 overflow-hidden">
+        {activeTab === "products" ? (
+          <Card className="h-full flex flex-col">
+            <CardHeader>
+              <CardTitle>Lista de Produtos</CardTitle>
+              <CardDescription>
+                Todos os produtos cadastrados no sistema
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto p-0">
+              {products.length === 0 ? (
+                <div className="flex items-center justify-center h-32">
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum produto cadastrado
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nome</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Preço (com casco)</TableHead>
+                        <TableHead>Preço (sem casco)</TableHead>
+                        <TableHead>Estoque Cheio</TableHead>
+                        <TableHead>Estoque Vazio</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {products.map((product) => (
+                        <TableRow key={product.id}>
+                          <TableCell className="font-medium">
+                            {product.name}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={getTypeVariant(product.type)}>
+                              {getTypeLabel(product.type)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>R$ {product.price_refill.toFixed(2)}</TableCell>
+                          <TableCell>R$ {product.price_full.toFixed(2)}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                product.stock_full === 0
+                                  ? "destructive"
+                                  : product.stock_full < 10
+                                  ? "secondary"
+                                  : "default"
+                              }
+                            >
+                              {product.stock_full}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{product.stock_empty}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleEdit(product)}
+                                title="Editar produto"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              {user?.role === "admin" && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleDeleteClick(product)}
+                                  title="Excluir produto"
+                                >
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="h-full flex flex-col">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Histórico de Movimentações</CardTitle>
+                  <CardDescription>
+                    Registro de todas as movimentações de estoque
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={loadMovements}
+                  title="Atualizar"
+                >
+                  <History className="w-4 h-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto p-0">
+              {loadingMovements ? (
+                <div className="flex items-center justify-center h-32">
+                  <p className="text-sm text-muted-foreground">Carregando...</p>
+                </div>
+              ) : sortedMovements.length === 0 ? (
+                <div className="flex items-center justify-center h-32">
+                  <p className="text-sm text-muted-foreground">
+                    Nenhuma movimentação registrada
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Data/Hora</TableHead>
+                        <TableHead>Produto</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead className="text-right">Quantidade</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sortedMovements.map((movement) => (
+                        <TableRow key={movement.id}>
+                          <TableCell>
+                            {new Date(movement.created_at).toLocaleString("pt-BR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {movement.product_name}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                movement.movement_type === "IN"
+                                  ? "default"
+                                  : movement.movement_type === "OUT"
+                                  ? "destructive"
+                                  : "secondary"
+                              }
+                            >
+                              {movement.movement_type === "IN"
+                                ? "ENTRADA"
+                                : movement.movement_type === "OUT"
+                                ? "SAÍDA"
+                                : "AJUSTE"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            <span
+                              className={
+                                movement.movement_type === "OUT"
+                                  ? "text-destructive"
+                                  : "text-green-600"
+                              }
+                            >
+                              {movement.movement_type === "OUT" ? "-" : "+"}
+                              {movement.quantity}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Dialog de Produto */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
@@ -358,7 +614,112 @@ export default function Products() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Movimentação */}
+      <Dialog open={showMovementModal} onOpenChange={setShowMovementModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nova Movimentação de Estoque</DialogTitle>
+            <DialogDescription>
+              Registre uma entrada, saída ou ajuste no estoque
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="movement-type">Tipo de Movimentação</Label>
+              <Select
+                value={movementType}
+                onValueChange={(value) =>
+                  setMovementType(value as "IN" | "OUT" | "ADJUST")
+                }
+              >
+                <SelectTrigger id="movement-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="IN">Entrada</SelectItem>
+                  <SelectItem value="OUT">Saída</SelectItem>
+                  <SelectItem value="ADJUST">Ajuste</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="product">Produto</Label>
+              <Select
+                value={selectedProduct?.toString() || ""}
+                onValueChange={(value) =>
+                  setSelectedProduct(parseInt(value) || null)
+                }
+              >
+                <SelectTrigger id="product">
+                  <SelectValue placeholder="Selecione um produto" />
+                </SelectTrigger>
+                <SelectContent>
+                  {products.map((product) => (
+                    <SelectItem key={product.id} value={product.id.toString()}>
+                      {product.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quantity">Quantidade</Label>
+              <Input
+                id="quantity"
+                type="number"
+                min="1"
+                value={quantity || ""}
+                onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
+                placeholder="Digite a quantidade"
+              />
+              {movementType === "ADJUST" && (
+                <p className="text-xs text-muted-foreground">
+                  Use valores negativos para reduzir o estoque
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowMovementModal(false);
+                setSelectedProduct(null);
+                setQuantity(0);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleMovement} disabled={movementLoading}>
+              {movementLoading ? "Processando..." : "Confirmar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Confirmação de Exclusão */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o produto{" "}
+              <strong>{productToDelete?.name}</strong>? Esta ação não pode ser
+              desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteLoading ? "Excluindo..." : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
-
